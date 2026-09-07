@@ -108,6 +108,7 @@ const deploymentService = read('app/Deployment/DeploymentService.php');
 const deploymentRoutes = read('routes/api/hosting.php');
 const deploymentPackages = read('app/Deployment/DeploymentPackageService.php');
 assert(deploymentRoutes.includes('deployPackage(') && !deploymentRoutes.includes('$deploymentPackages->consume('), 'Deployment package consumption is still outside the atomic intake transaction.');
+assert(deploymentRoutes.includes('->overview(') && deploymentService.includes("'current_versions'") && deploymentService.includes("'rollback_points'") && deploymentService.includes("'attention_required'"), 'Deployment Center does not receive backend-classified current versions, rollback points, and attention states.');
 assert(deploymentService.includes('SELECT * FROM deployment_packages WHERE id = ? AND user_id = ? AND account_id = ? FOR UPDATE') && deploymentService.includes('UPDATE deployment_packages SET consumed_at = CURRENT_TIMESTAMP'), 'Deployment intake does not lock and consume its owner-bound package transactionally.');
 assert(deploymentService.includes("'default',\n                1,") && deploymentService.includes('rollback_job_id = ?'), 'Deployment and rollback jobs are not persisted as single-attempt operations.');
 assert(deploymentService.includes('deployment_reserved_path') && deploymentService.includes('invalid_health_check_url'), 'Deployment destination or health-check input policy is missing.');

@@ -13,6 +13,12 @@ use App\Security\PathGuard;
 
 final class DeploymentService
 {
+    private const ACTIVE_STATUSES = [
+        'queued', 'validating', 'validated', 'backup_started', 'backup_completed',
+        'upload_started', 'upload_completed', 'extract_started', 'extract_completed',
+        'deploying', 'health_check', 'rolling_back',
+    ];
+
     public function __construct(
         private readonly Database $database,
         private readonly AccountRepository $accounts,
@@ -117,12 +123,76 @@ final class DeploymentService
         return $this->database->all('SELECT id, package_id, queue_job_id, rollback_job_id, package_name, package_checksum, destination, stage_path, switch_state, status, backup_enabled, backup_ref, backup_size, backup_checksum, rollback_path, destination_existed, health_check_url, health_status, error_code, reconciliation_json, recovery_attempts, last_recovery_at, started_at, completed_at, rolled_back_at, rollback_verified_at, created_at FROM deployments WHERE user_id = ? AND account_id = ? ORDER BY id DESC LIMIT 100', [$userId, $accountId]);
     }
 
+    /** @return array{deployments:list<array<string,mixed>>,current_versions:list<array<string,mixed>>,rollback_points:list<array<string,mixed>>,active_deployments:list<array<string,mixed>>,attention_required:list<array<string,mixed>>} */
+    public function overview(int $userId, int $accountId): array
+    {
+        $rows = $this->list($userId, $accountId);
+        $currentDestinations = [];
+        $deployments = [];
+        foreach ($rows as $row) {
+            $destination = (string) $row['destination'];
+            $isCurrent = (string) $row['status'] === 'completed' && !isset($currentDestinations[$destination]);
+            if ($isCurrent) {
+                $currentDestinations[$destination] = true;
+            }
+            $deployments[] = $this->decorate($row, $isCurrent);
+        }
+
+        return [
+            'deployments' => $deployments,
+            'current_versions' => array_values(array_filter($deployments, static fn (array $deployment): bool => $deployment['is_current'])),
+            'rollback_points' => array_values(array_filter($deployments, static fn (array $deployment): bool => $deployment['rollback_available'])),
+            'active_deployments' => array_values(array_filter($deployments, static fn (array $deployment): bool => $deployment['is_active'])),
+            'attention_required' => array_values(array_filter($deployments, static fn (array $deployment): bool => $deployment['requires_attention'])),
+        ];
+    }
+
     /** @return array<string,mixed> */
     public function status(int $userId, int $accountId, int $deploymentId): array
     {
         $deployment = $this->owned($userId, $accountId, $deploymentId);
-        $deployment['events'] = $this->database->all('SELECT stage, status, message_key, metadata_json, created_at FROM deployment_events WHERE deployment_id = ? ORDER BY id', [$deploymentId]);
+        $current = $this->database->one("SELECT id FROM deployments WHERE user_id = ? AND account_id = ? AND destination = ? AND status = 'completed' ORDER BY id DESC LIMIT 1", [$userId, $accountId, $deployment['destination']]);
+        $deployment = $this->decorate($deployment, $current !== null && (int) $current['id'] === $deploymentId);
+        $events = $this->database->all('SELECT stage, status, message_key, metadata_json, created_at FROM deployment_events WHERE deployment_id = ? ORDER BY id', [$deploymentId]);
+        foreach ($events as &$event) {
+            $event['metadata'] = $this->decodeJson($event['metadata_json'] ?? null);
+            unset($event['metadata_json']);
+        }
+        unset($event);
+        $deployment['events'] = $events;
         return $deployment;
+    }
+
+    /** @param array<string,mixed> $deployment
+     *  @return array<string,mixed>
+     */
+    private function decorate(array $deployment, bool $isCurrent): array
+    {
+        $status = (string) $deployment['status'];
+        $hasDirectoryRollback = is_string($deployment['rollback_path'] ?? null) && $deployment['rollback_path'] !== '';
+        $hasArchiveRollback = is_string($deployment['backup_ref'] ?? null) && $deployment['backup_ref'] !== '';
+        $canRemoveDestination = !(bool) ($deployment['destination_existed'] ?? true);
+        $deployment['is_current'] = $isCurrent;
+        $deployment['is_active'] = in_array($status, self::ACTIVE_STATUSES, true);
+        $deployment['requires_attention'] = in_array($status, ['rollback_failed', 'reconciliation_required'], true);
+        $deployment['rollback_available'] = in_array($status, ['completed', 'rollback_failed'], true) && ($hasDirectoryRollback || $hasArchiveRollback || $canRemoveDestination);
+        $deployment['rollback_kind'] = $deployment['rollback_available']
+            ? ($hasDirectoryRollback ? 'directory' : ($hasArchiveRollback ? 'archive' : 'remove_destination'))
+            : null;
+        $deployment['package_metadata'] = $this->decodeJson($deployment['package_metadata_json'] ?? null);
+        $deployment['reconciliation'] = $this->decodeJson($deployment['reconciliation_json'] ?? null);
+        unset($deployment['package_metadata_json'], $deployment['reconciliation_json']);
+        return $deployment;
+    }
+
+    /** @return array<string,mixed> */
+    private function decodeJson(mixed $value): array
+    {
+        if (!is_string($value) || $value === '') {
+            return [];
+        }
+        $decoded = json_decode($value, true);
+        return is_array($decoded) ? $decoded : [];
     }
 
     /** @return array<string,mixed> */

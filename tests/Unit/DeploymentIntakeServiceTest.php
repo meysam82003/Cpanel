@@ -71,10 +71,12 @@ CREATE TABLE deployments (
  package_name TEXT NOT NULL, package_checksum TEXT NULL, package_metadata_json TEXT NULL,
  destination TEXT NOT NULL, stage_path TEXT NULL, switch_state TEXT NOT NULL DEFAULT 'none',
  status TEXT NOT NULL DEFAULT 'created', backup_enabled INTEGER NOT NULL DEFAULT 1,
- backup_ref TEXT NULL, backup_size INTEGER NULL, rollback_path TEXT NULL,
+        backup_ref TEXT NULL, backup_size INTEGER NULL, backup_checksum TEXT NULL, rollback_path TEXT NULL,
  destination_existed INTEGER NOT NULL DEFAULT 0, health_check_url TEXT NULL,
  health_status INTEGER NULL, error_code TEXT NULL, reconciliation_json TEXT NULL,
- notification_id INTEGER NULL, started_at TEXT NULL, completed_at TEXT NULL,
+        notification_id INTEGER NULL, rollback_notification_id INTEGER NULL,
+        recovery_attempts INTEGER NOT NULL DEFAULT 0, last_recovery_at TEXT NULL,
+        started_at TEXT NULL, completed_at TEXT NULL,
  rolled_back_at TEXT NULL, rollback_verified_at TEXT NULL,
  created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -190,6 +192,34 @@ SQL);
         self::assertNotSame($first, $retry);
         self::assertSame(2, (int) $this->database->one("SELECT COUNT(*) AS total FROM audit_logs WHERE action = 'deployment.rollback_queue'")['total']);
         $this->assertSafeCode('deployment_not_found', fn () => $this->deployments->rollback(2, 20, $deployment['deployment_id']));
+    }
+
+    public function testOverviewClassifiesCurrentVersionsRollbackPointsAndAttention(): void
+    {
+        $insert = 'INSERT INTO deployments (id, user_id, account_id, package_name, destination, status, destination_existed, backup_ref, rollback_path, reconciliation_json, created_at) VALUES (?, 1, 10, ?, ?, ?, ?, ?, ?, ?, ?)';
+        $this->database->execute($insert, [1, 'release-1.zip', '/home/alice/public_html/app', 'completed', 1, '/home/alice/.tcm-backups/1.zip', '/home/alice/.tcm-rollbacks/1', null, '2026-01-01 00:00:00']);
+        $this->database->execute($insert, [2, 'release-2.zip', '/home/alice/public_html/app', 'rolled_back', 1, '/home/alice/.tcm-backups/2.zip', null, null, '2026-01-02 00:00:00']);
+        $this->database->execute($insert, [3, 'new-site.zip', '/home/alice/public_html/new', 'completed', 0, null, null, null, '2026-01-03 00:00:00']);
+        $this->database->execute($insert, [4, 'broken.zip', '/home/alice/public_html/broken', 'rollback_failed', 1, '/home/alice/.tcm-backups/4.zip', null, '{"phase":"rollback"}', '2026-01-04 00:00:00']);
+        $this->database->execute($insert, [5, 'running.zip', '/home/alice/public_html/app', 'health_check', 1, '/home/alice/.tcm-backups/5.zip', null, null, '2026-01-05 00:00:00']);
+        $this->database->execute($insert, [6, 'ambiguous.zip', '/home/alice/public_html/other', 'reconciliation_required', 1, null, null, '{"phase":"deploy"}', '2026-01-06 00:00:00']);
+        $this->database->execute("INSERT INTO deployment_events (deployment_id, stage, status, message_key, metadata_json) VALUES (1, 'complete', 'completed', 'deployment.completed', '{\"entries\":2}')");
+
+        $overview = $this->deployments->overview(1, 10);
+
+        self::assertSame([3, 1], array_column($overview['current_versions'], 'id'));
+        self::assertSame([4, 3, 1], array_column($overview['rollback_points'], 'id'));
+        self::assertSame([5], array_column($overview['active_deployments'], 'id'));
+        self::assertSame([6, 4], array_column($overview['attention_required'], 'id'));
+        self::assertSame('remove_destination', $overview['current_versions'][0]['rollback_kind']);
+        self::assertSame('directory', $overview['current_versions'][1]['rollback_kind']);
+        self::assertFalse($overview['deployments'][4]['rollback_available']);
+
+        $details = $this->deployments->status(1, 10, 1);
+        self::assertTrue($details['is_current']);
+        self::assertSame(['entries' => 2], $details['events'][0]['metadata']);
+        self::assertArrayNotHasKey('metadata_json', $details['events'][0]);
+        $this->assertSafeCode('host_not_found', fn () => $this->deployments->overview(2, 10));
     }
 
     private function zip(string $name): string

@@ -265,7 +265,7 @@ return static function (ApiKernel $api, Container $container): void {
         $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'deployment.run', $packageId . ':' . $destination);
         return $deployments->deployPackage($userId, $accountId, $packageId, $destination, $healthCheckUrl);
     }, 8);
-    $api->route('GET', '/api/v1/hosts/{account}/deployments', static fn (Request $request, array $params, array $session): array => ['deployments' => $deployments->list((int) $session['user_id'], (int) $params['account'])]);
+    $api->route('GET', '/api/v1/hosts/{account}/deployments', static fn (Request $request, array $params, array $session): array => $deployments->overview((int) $session['user_id'], (int) $params['account']));
     $api->route('GET', '/api/v1/hosts/{account}/deployments/{deployment}', static fn (Request $request, array $params, array $session): array => $deployments->status((int) $session['user_id'], (int) $params['account'], (int) $params['deployment']));
     $api->route('POST', '/api/v1/hosts/{account}/deployments/{deployment}/rollback', static function (Request $request, array $params, array $session) use ($deployments, $confirmations): array {
         $userId = (int) $session['user_id'];
