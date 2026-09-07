@@ -261,9 +261,9 @@ return static function (ApiKernel $api, Container $container): void {
         $plans->feature($userId, 'deployment_enabled');
         $packageId = (int) $request->input('package_id', 0);
         $destination = (string) $request->input('destination', '');
+        $healthCheckUrl = $request->input('health_check_url') === null ? null : trim((string) $request->input('health_check_url'));
         $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'deployment.run', $packageId . ':' . $destination);
-        $package = $deploymentPackages->consume($userId, $accountId, $packageId);
-        return $deployments->deploy($userId, $accountId, $package['path'], $package['name'], $destination, $request->input('health_check_url') === null ? null : (string) $request->input('health_check_url'), true);
+        return $deployments->deployPackage($userId, $accountId, $packageId, $destination, $healthCheckUrl);
     }, 8);
     $api->route('GET', '/api/v1/hosts/{account}/deployments', static fn (Request $request, array $params, array $session): array => ['deployments' => $deployments->list((int) $session['user_id'], (int) $params['account'])]);
     $api->route('GET', '/api/v1/hosts/{account}/deployments/{deployment}', static fn (Request $request, array $params, array $session): array => $deployments->status((int) $session['user_id'], (int) $params['account'], (int) $params['deployment']));

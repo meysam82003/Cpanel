@@ -14,14 +14,25 @@ final class DeploymentPackageService
     {
     }
 
-    /** @return array{id:int,preview:array<string,mixed>,expires_at:string} */
+    /** @return array{id:int,name:string,metadata:array<string,mixed>,preview:array<string,mixed>,expires_at:string} */
     public function register(int $userId, int $accountId, string $path, string $originalName): array
     {
         $this->accounts->getOwned($userId, $accountId);
-        $metadata = $this->validator->validate($path);
+        if (is_link($path)) {
+            throw new AppException('Deployment package storage must not be a symbolic link.', 422, 'invalid_deployment_upload', [], 'deploy.package');
+        }
+        $real = realpath($path);
+        if ($real === false || !is_file($real) || !is_readable($real)) {
+            throw new AppException('Deployment package is not available in secure upload storage.', 422, 'invalid_deployment_upload', [], 'deploy.package');
+        }
+        $metadata = $this->validator->validate($real);
+        $name = mb_substr(basename(str_replace('\\', '/', $originalName)), 0, 255);
+        if (!preg_match('/^[\pL\pN._ -]{1,200}\.zip$/ui', $name)) {
+            $name = 'release.zip';
+        }
         $expires = gmdate('Y-m-d H:i:s', time() + 1800);
-        $this->database->execute('INSERT INTO deployment_packages (user_id, account_id, original_name, local_path, checksum_sha256, metadata_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [$userId, $accountId, mb_substr(basename($originalName), 0, 255), $path, $metadata['sha256'], json_encode($metadata, JSON_THROW_ON_ERROR), $expires]);
-        return ['id' => $this->database->lastInsertId(), 'preview' => $metadata, 'expires_at' => $expires];
+        $this->database->execute('INSERT INTO deployment_packages (user_id, account_id, original_name, local_path, checksum_sha256, metadata_json, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [$userId, $accountId, $name, $real, $metadata['sha256'], json_encode($metadata, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), $expires]);
+        return ['id' => $this->database->lastInsertId(), 'name' => $name, 'metadata' => $metadata, 'preview' => $metadata, 'expires_at' => $expires];
     }
 
     /** @return array{id:int,path:string,name:string,metadata:array<string,mixed>} */

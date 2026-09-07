@@ -99,6 +99,18 @@ assert(archiveExtract.includes('downloadTo(') && archiveExtract.includes('->vali
 assert(archiveExtract.includes("hash_equals((string) $summary['sha256'], (string) $stagedDownload['sha256'])") && archiveExtract.includes('archive_reconciliation_required'), 'Archive staging integrity or ambiguous-outcome reconciliation is missing.');
 assert(archiveExtract.includes('@unlink($temporary)') && archiveExtract.includes('@unlink($verificationTemporary)'), 'Archive inspection temporary files are not cleaned.');
 
+for (const column of ['package_id', 'queue_job_id', 'rollback_job_id', 'package_checksum', 'package_metadata_json', 'stage_path', 'switch_state', 'backup_size', 'reconciliation_json', 'notification_id', 'rollback_verified_at']) {
+  assert(schema.includes(`ADD COLUMN ${column}`), `Deployment state schema is missing ${column}.`);
+}
+const deploymentService = read('app/Deployment/DeploymentService.php');
+const deploymentRoutes = read('routes/api/hosting.php');
+const deploymentPackages = read('app/Deployment/DeploymentPackageService.php');
+assert(deploymentRoutes.includes('deployPackage(') && !deploymentRoutes.includes('$deploymentPackages->consume('), 'Deployment package consumption is still outside the atomic intake transaction.');
+assert(deploymentService.includes('SELECT * FROM deployment_packages WHERE id = ? AND user_id = ? AND account_id = ? FOR UPDATE') && deploymentService.includes('UPDATE deployment_packages SET consumed_at = CURRENT_TIMESTAMP'), 'Deployment intake does not lock and consume its owner-bound package transactionally.');
+assert(deploymentService.includes("'default',\n                1,") && deploymentService.includes('rollback_job_id = ?'), 'Deployment and rollback jobs are not persisted as single-attempt operations.');
+assert(deploymentService.includes('deployment_reserved_path') && deploymentService.includes('invalid_health_check_url'), 'Deployment destination or health-check input policy is missing.');
+assert(deploymentPackages.includes("'name' => $name") && deploymentPackages.includes("'metadata' => $metadata") && deploymentPackages.includes('is_link($path)'), 'Deployment upload response contract or symlink protection is incomplete.');
+
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {
   const source = read(file);
