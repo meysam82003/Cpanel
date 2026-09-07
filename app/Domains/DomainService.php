@@ -136,8 +136,8 @@ final class DomainService
             'src' => $sourcePath,
             'redirect' => $destination,
             'type' => $status === 301 ? 'permanent' : 'temporary',
-            'wildcard' => $wildcard ? 1 : 0,
-            'redirect_w_w_w' => 0,
+            'redirect_wildcard' => $wildcard ? 1 : 0,
+            'redirect_www' => 0,
         ], 'POST', [], false);
         $this->audit->record($userId, $accountId, 'domain.redirect_add', 'success', 'domain', $domain, ['source' => $sourcePath, 'destination' => $destination, 'status' => $status]);
         return ['cpanel' => $result['data']];
@@ -170,19 +170,49 @@ final class DomainService
         if ($edits === [] || count($edits) > 100) {
             throw new AppException('DNS changes must contain between 1 and 100 records.', 422, 'invalid_dns_changes', [], 'domains.dns');
         }
-        $params = ['zone' => $domain];
+        $connection = $this->accounts->connection($userId, $accountId);
+        $zone = $this->cpanel->call($connection, 'DNS', 'parse_zone', ['zone' => $domain]);
+        $params = ['zone' => $domain, 'serial' => $this->dnsSerial($zone['data'])];
+        $grouped = ['add' => [], 'edit' => [], 'remove' => []];
         foreach (array_values($edits) as $index => $edit) {
             if (!is_array($edit) || !in_array($edit['action'] ?? '', ['add', 'edit', 'remove'], true)) {
                 throw new AppException('A DNS record change is invalid.', 422, 'invalid_dns_change', ['index' => $index], 'domains.dns');
             }
-            foreach ($edit as $key => $value) {
-                if (!preg_match('/^[a-z][a-z0-9_]*$/', (string) $key) || (!is_scalar($value) && $value !== null)) {
-                    throw new AppException('A DNS record field is invalid.', 422, 'invalid_dns_change', ['index' => $index], 'domains.dns');
+            $action = (string) $edit['action'];
+            if ($action === 'remove') {
+                $grouped['remove'][] = $this->dnsLineIndex($edit['line_index'] ?? null, $index);
+                continue;
+            }
+            $allowed = ['action', 'line_index', 'dname', 'ttl', 'record_type', 'data'];
+            if (array_diff(array_keys($edit), $allowed) !== []) {
+                throw new AppException('A DNS record contains an unsupported field.', 422, 'invalid_dns_change', ['index' => $index], 'domains.dns');
+            }
+            $dname = trim((string) ($edit['dname'] ?? ''));
+            $recordType = strtoupper(trim((string) ($edit['record_type'] ?? '')));
+            $ttl = filter_var($edit['ttl'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0, 'max_range' => 2_147_483_647]]);
+            $data = $edit['data'] ?? null;
+            if ($dname === '' || strlen($dname) > 255 || preg_match('/[\x00\r\n]/', $dname) || preg_match('/^[A-Z][A-Z0-9]{0,15}$/', $recordType) !== 1 || $ttl === false || !is_array($data) || $data === [] || count($data) > 32) {
+                throw new AppException('A DNS record name, type, TTL, or data value is invalid.', 422, 'invalid_dns_change', ['index' => $index], 'domains.dns');
+            }
+            $recordData = [];
+            foreach ($data as $value) {
+                if (!is_scalar($value) || strlen((string) $value) > 4096 || preg_match('/[\x00\r\n]/', (string) $value)) {
+                    throw new AppException('A DNS record data value is invalid.', 422, 'invalid_dns_change', ['index' => $index], 'domains.dns');
                 }
-                $params[$edit['action'] . '-' . $index . '-' . $key] = $value;
+                $recordData[] = (string) $value;
+            }
+            $record = ['dname' => $dname, 'ttl' => (int) $ttl, 'record_type' => $recordType, 'data' => $recordData];
+            if ($action === 'edit') {
+                $record['line_index'] = $this->dnsLineIndex($edit['line_index'] ?? null, $index);
+            }
+            $grouped[$action][] = json_encode($record, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        }
+        foreach ($grouped as $action => $values) {
+            if ($values !== []) {
+                $params[$action] = $values;
             }
         }
-        $result = $this->cpanel->call($this->accounts->connection($userId, $accountId), 'DNS', 'mass_edit_zone', $params, 'POST', [], false);
+        $result = $this->cpanel->call($connection, 'DNS', 'mass_edit_zone', $params, 'POST', [], false);
         $this->audit->record($userId, $accountId, 'domain.dns_edit', 'success', 'domain', $domain, ['change_count' => count($edits)]);
         return ['cpanel' => $result['data']];
     }
@@ -216,6 +246,48 @@ final class DomainService
             throw new AppException('Document root is invalid.', 422, 'invalid_document_root', [], 'domains.overview');
         }
         return $root;
+    }
+
+    private function dnsLineIndex(mixed $value, int $changeIndex): int
+    {
+        $line = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+        if ($line === false) {
+            throw new AppException('A DNS edit/remove operation requires a valid line_index.', 422, 'invalid_dns_change', ['index' => $changeIndex], 'domains.dns');
+        }
+        return (int) $line;
+    }
+
+    private function dnsSerial(mixed $payload): int
+    {
+        foreach ($this->asList($payload) as $record) {
+            if (strtoupper((string) ($record['record_type'] ?? '')) !== 'SOA') {
+                continue;
+            }
+            $encoded = $record['data_b64'] ?? [];
+            if (!is_array($encoded)) {
+                $encoded = [$encoded];
+            }
+            $decoded = [];
+            foreach ($encoded as $value) {
+                $plain = is_string($value) ? base64_decode($value, true) : false;
+                if ($plain !== false) {
+                    $parts = preg_split('/\s+/', trim($plain));
+                    if (is_array($parts)) {
+                        array_push($decoded, ...$parts);
+                    }
+                }
+            }
+            $candidate = $decoded[2] ?? null;
+            if (is_string($candidate) && preg_match('/^[0-9]{1,18}$/', $candidate) === 1 && (int) $candidate > 0) {
+                return (int) $candidate;
+            }
+            foreach ($decoded as $value) {
+                if (preg_match('/^[0-9]{9,18}$/', $value) === 1 && (int) $value > 0) {
+                    return (int) $value;
+                }
+            }
+        }
+        throw new AppException('cPanel did not return the DNS zone serial. Refresh the zone and try again.', 409, 'dns_serial_unavailable', [], 'domains.dns');
     }
 
     private function addonSubdomainLabel(string $domain): string

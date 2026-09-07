@@ -33,9 +33,15 @@ final class SslService
     public function autoSslEligibility(int $userId, int $accountId): array
     {
         $connection = $this->accounts->connection($userId, $accountId);
-        $feature = $this->cpanel->call($connection, 'Features', 'has_feature', ['name' => 'autossl']);
-        $featureData = is_array($feature['data']) ? $feature['data'] : [];
-        $enabled = (bool) ($featureData['has_feature'] ?? $featureData['enabled'] ?? $featureData['result'] ?? false);
+        try {
+            $this->cpanel->call($connection, 'Features', 'has_feature', ['name' => 'autossl']);
+            $enabled = true;
+        } catch (CpanelApiException $exception) {
+            if ($exception->safeCode !== 'cpanel_operation_failed') {
+                throw $exception;
+            }
+            $enabled = false;
+        }
         return [
             'autossl' => [
                 'available' => $enabled,
@@ -48,7 +54,7 @@ final class SslService
     /** @return array<string,mixed> */
     public function runAutoSsl(int $userId, int $accountId): array
     {
-        $result = $this->cpanel->call($this->accounts->connection($userId, $accountId), 'SSL', 'start_autossl_check', [], 'POST', [], false);
+        $result = $this->cpanel->call($this->accounts->connection($userId, $accountId), 'SSL', 'start_autossl_check', [], 'GET', [], false);
         $this->audit->record($userId, $accountId, 'ssl.autossl_run', 'success', 'ssl', 'autossl');
         return ['cpanel' => $result['data']];
     }

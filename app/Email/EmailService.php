@@ -24,9 +24,9 @@ final class EmailService
         $page = max(1, $page);
         $perPage = max(10, min(100, $perPage));
         $result = $this->cpanel->call($this->accounts->connection($userId, $accountId), 'Email', 'list_pops_with_disk', [
-            'api.paginate' => 1,
-            'api.paginate_start' => ($page - 1) * $perPage + 1,
-            'api.paginate_size' => $perPage,
+            'api.paginate.enable' => 1,
+            'api.paginate.start' => ($page - 1) * $perPage + 1,
+            'api.paginate.size' => $perPage,
             'api.sort.enable' => 1,
             'api.sort.a.field' => 'email',
             'api.sort.a.method' => 'lexicographic',

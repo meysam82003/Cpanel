@@ -202,7 +202,7 @@ final class UapiClient
         $body = null;
         $headers = ['Accept: application/json', 'Authorization: cpanel ' . $connection['username'] . ':' . $connection['token']];
         if ($method === 'GET' && $parameters !== []) {
-            $url .= '?' . http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
+            $url .= '?' . $this->buildQuery($parameters);
         } elseif ($method !== 'GET') {
             if ($files !== []) {
                 $body = $parameters;
@@ -213,7 +213,7 @@ final class UapiClient
                     $body[$field] = new CURLFile($file['path'], $file['mime'] ?? 'application/octet-stream', $file['name'] ?? basename($file['path']));
                 }
             } else {
-                $body = http_build_query($parameters, '', '&', PHP_QUERY_RFC3986);
+                $body = $this->buildQuery($parameters);
                 $headers[] = 'Content-Type: application/x-www-form-urlencoded';
             }
         }
@@ -420,6 +420,28 @@ final class UapiClient
             return [$value];
         }
         return array_values(array_map('strval', is_array($value) ? array_filter($value, static fn ($item): bool => is_scalar($item)) : []));
+    }
+
+    /** @param array<string, scalar|list<scalar>|null> $parameters */
+    private function buildQuery(array $parameters): string
+    {
+        $pairs = [];
+        foreach ($parameters as $name => $value) {
+            if (is_array($value)) {
+                foreach ($value as $item) {
+                    if (!is_scalar($item)) {
+                        throw new CpanelApiException('A cPanel list parameter contains an invalid value.', 'cpanel_invalid_parameter', ['parameter' => $name], 422);
+                    }
+                    $pairs[] = rawurlencode($name) . '=' . rawurlencode((string) $item);
+                }
+                continue;
+            }
+            if ($value !== null && !is_scalar($value)) {
+                throw new CpanelApiException('A cPanel parameter contains an invalid value.', 'cpanel_invalid_parameter', ['parameter' => $name], 422);
+            }
+            $pairs[] = rawurlencode($name) . '=' . rawurlencode($value === null ? '' : (string) $value);
+        }
+        return implode('&', $pairs);
     }
 
     private function assertIdentifier(string $value, string $type): void

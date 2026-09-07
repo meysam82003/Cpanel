@@ -33,9 +33,18 @@ final class CapabilityDetector
         $features = [];
         try {
             $featureResult = $this->client->call($connection, 'Features', 'list_features');
-            foreach (is_array($featureResult['data']) ? $featureResult['data'] : [] as $item) {
-                if (is_array($item) && isset($item['name'])) {
-                    $features[strtolower((string) $item['name'])] = (bool) ($item['is_enabled'] ?? $item['enabled'] ?? false);
+            $featureData = is_array($featureResult['data']) ? $featureResult['data'] : [];
+            if (!array_is_list($featureData)) {
+                foreach ($featureData as $name => $enabled) {
+                    if (is_string($name) && is_scalar($enabled)) {
+                        $features[strtolower($name)] = (bool) $enabled;
+                    }
+                }
+            } else {
+                foreach ($featureData as $item) {
+                    if (is_array($item) && isset($item['name'])) {
+                        $features[strtolower((string) $item['name'])] = (bool) ($item['is_enabled'] ?? $item['enabled'] ?? false);
+                    }
                 }
             }
         } catch (CpanelApiException) {

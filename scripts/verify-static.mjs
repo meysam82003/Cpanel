@@ -69,6 +69,21 @@ for (const file of productionFiles) {
   assert(!/-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/.test(source), `Private key in ${file}`);
 }
 
+const cpanelSources = productionFiles.filter(file => file.endsWith('.php')).map(read).join('\n');
+for (const obsolete of [
+  /['"]Domain['"]\s*,\s*['"](?:add_domain|delete_domain)['"]/,
+  /['"]Mysql['"]\s*,\s*['"]list_hosts['"]/,
+  /['"]SSL['"]\s*,\s*['"]can_autossl['"]/,
+  /['"]Fileman['"]\s*,\s*['"](?:move_dir|restore_file)['"]/,
+]) assert(!obsolete.test(cpanelSources), `Obsolete or nonexistent cPanel UAPI contract remains: ${obsolete}`);
+assert(!/->call\([^\n]*['"]Cron['"]\s*,\s*['"](?:list_cron|add_line|edit_line|remove_line)['"]/.test(cpanelSources), 'Cron operations incorrectly use nonexistent UAPI routes.');
+assert(cpanelSources.includes("callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'listcron'") && cpanelSources.includes("'Cron', 'remove_line', ['line' => $lineKey]"), 'Cron API 2 calls do not match the documented compatibility contract.');
+assert(cpanelSources.includes("'DNS', 'mass_edit_zone'") && cpanelSources.includes("'serial' => $this->dnsSerial"), 'DNS mass_edit_zone is not bound to the current SOA serial.');
+assert(cpanelSources.includes("'redirect_wildcard'") && cpanelSources.includes("'redirect_www'"), 'Redirect parameters do not match the current Mime UAPI contract.');
+assert(cpanelSources.includes("'directive-' . $position") && cpanelSources.includes("$key . ':'"), 'PHP INI directives do not match the current LangPHP contract.');
+assert(cpanelSources.includes("'api.paginate.enable'") && cpanelSources.includes("'api.paginate.start'"), 'UAPI server-side pagination controls are missing.');
+assert(cpanelSources.includes('isOperationUnavailable') && cpanelSources.includes('api2_compatibility'), 'Version-aware cPanel API compatibility policy is missing.');
+
 const helpSource = read('resources/help/topics.php');
 const helpSlugs = new Set([...helpSource.matchAll(/'slug'\s*=>\s*'([^']+)'/g)].map(match => match[1]));
 const helpRelated = [...helpSource.matchAll(/'related'\s*=>\s*\[([^\]]*)\]/g)].flatMap(match => [...match[1].matchAll(/'([^']+)'/g)].map(item => item[1]));

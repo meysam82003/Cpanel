@@ -222,8 +222,18 @@ return static function (ApiKernel $api, Container $container): void {
             throw new AppException('PHP INI directives must be an object.', 422, 'invalid_php_ini_update', [], 'php.overview');
         }
         $type = (string) $request->input('type', 'home');
-        $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'php.ini', $type);
-        return $php->setIni((int) $session['user_id'], (int) $params['account'], $type, $directives);
+        $vhost = $request->input('vhost') === null ? null : strtolower(trim((string) $request->input('vhost')));
+        ksort($directives, SORT_STRING);
+        $signature = '';
+        foreach ($directives as $key => $value) {
+            if (!is_scalar($value)) {
+                throw new AppException('PHP INI directive values must be scalar.', 422, 'invalid_php_ini_update', [], 'php.overview');
+            }
+            $signature .= (string) $key . "\0" . (string) $value . "\n";
+        }
+        $target = $type . ':' . ($vhost ?? '') . ':' . hash('sha256', $signature);
+        $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'php.ini', $target);
+        return $php->setIni((int) $session['user_id'], (int) $params['account'], $type, $directives, $vhost);
     }, 10);
 
     $api->route('POST', '/api/v1/hosts/{account}/deployment-packages', static function (Request $request, array $params, array $session) use ($uploads, $plans, $deploymentPackages): array {

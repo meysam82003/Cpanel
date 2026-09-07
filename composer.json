@@ -39,6 +39,7 @@
     "test:integration": "phpunit --testsuite integration --colors=always",
     "test:security": "phpunit --testsuite security --colors=always",
     "test:static": "node scripts/verify-static.mjs",
+    "test:cpanel-contract": "node scripts/verify-cpanel-openapi.mjs",
     "lint": "@php scripts/lint.php"
   },
   "config": {
