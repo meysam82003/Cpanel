@@ -54,6 +54,10 @@ const installer = read('public/install.php');
 const installerFields = [...installer.matchAll(/<input\b[^>]*\bname="([^"]+)"/g)].map(match => match[1]).filter(name => name !== '_csrf').sort();
 assert(JSON.stringify(installerFields) === JSON.stringify(['bot_token', 'db_name', 'db_password', 'db_username', 'super_admin_id']), `Installer fields are not exactly the required five: ${installerFields.join(', ')}`);
 assert(!/<select\b|<textarea\b/i.test(installer.match(/<form[\s\S]*?<\/form>/i)?.[0] || ''), 'Installer asks for values outside its five input fields.');
+assert(!installer.includes('$error = $exception->getMessage()'), 'Installer exposes raw exception messages to unauthenticated visitors.');
+assert(installer.includes('InstallerException') && installer.includes("'message_fa'") && installer.includes("'message_en'"), 'Installer errors are not safe and bilingual.');
+const installerService = read('app/Installer/InstallerService.php');
+assert(installerService.includes('LOCK_EX | LOCK_NB') && installerService.includes('installer_busy'), 'Installer does not prevent concurrent execution.');
 
 const migrations = walk('database/migrations').filter(file => file.endsWith('.sql')).sort();
 assert(migrations.length >= 4, `Expected at least four migrations, found ${migrations.length}.`);
@@ -70,6 +74,7 @@ const queueSource = read('app/Queue/QueueService.php');
 assert(queueSource.includes('QUEUE_STALE_AFTER_SECONDS') || read('app/Core/Container.php').includes("Env::int('QUEUE_STALE_AFTER_SECONDS'"), 'Queue lease duration is not configurable.');
 assert(queueSource.includes('reserved_at = CURRENT_TIMESTAMP') && queueSource.includes('reservation_token = ?'), 'Queue progress does not renew an owner-bound lease.');
 assert(!queueSource.includes('DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 20 MINUTE)'), 'Queue recovery still uses the old hard-coded MySQL lease timeout.');
+assert(read('app/Queue/CleanupService.php').includes("'user_sessions'"), 'Expired bot sessions are not cleaned up.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

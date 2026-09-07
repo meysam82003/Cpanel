@@ -30,4 +30,11 @@ final class SecretMaskerTest extends TestCase
         $value = SecretMasker::mask('failure for 123456789:' . str_repeat('A', 35));
         self::assertSame('failure for [TELEGRAM_TOKEN_REDACTED]', $value);
     }
+
+    public function testMasksEnvironmentAssignmentsAndVersionedKeys(): void
+    {
+        $masked = SecretMasker::mask('DB_PASSWORD_B64=c2VjcmV0 ENCRYPTION_KEY_V2=base64:abcdef APP_KEY=base64:qwerty');
+        self::assertSame('DB_PASSWORD_B64=[REDACTED] ENCRYPTION_KEY_V2=[REDACTED] APP_KEY=[REDACTED]', $masked);
+        self::assertSame('[REDACTED]', SecretMasker::mask('secret-value', 'encryption_key_v3'));
+    }
 }

@@ -16,25 +16,24 @@ final class CleanupService
     public function run(): array
     {
         $counts = [];
-        foreach (['temporary_connections', 'callback_states', 'confirmation_nonces', 'miniapp_sessions', 'replay_nonces', 'rate_limits', 'download_tokens', 'operation_locks'] as $table) {
-            $column = $table === 'miniapp_sessions' ? 'expires_at' : 'expires_at';
-            $statement = $this->database->execute("DELETE FROM {$table} WHERE {$column} < CURRENT_TIMESTAMP");
+        foreach (['temporary_connections', 'callback_states', 'confirmation_nonces', 'miniapp_sessions', 'user_sessions', 'replay_nonces', 'rate_limits', 'download_tokens', 'operation_locks'] as $table) {
+            $statement = $this->database->execute("DELETE FROM {$table} WHERE expires_at < CURRENT_TIMESTAMP");
             $counts[$table] = $statement->rowCount();
         }
-        $expiredPackages = $this->database->all('SELECT id, local_path FROM deployment_packages WHERE expires_at < CURRENT_TIMESTAMP');
+        $expiredPackages = $this->database->all('SELECT id, local_path FROM deployment_packages WHERE expires_at < CURRENT_TIMESTAMP AND consumed_at IS NULL');
         foreach ($expiredPackages as $package) {
             $path = (string) $package['local_path'];
             if ($this->insideStorage($path) && is_file($path) && @unlink($path)) {
                 $counts['deployment_package_files'] = ($counts['deployment_package_files'] ?? 0) + 1;
             }
         }
-        $counts['deployment_packages'] = $this->database->execute('DELETE FROM deployment_packages WHERE expires_at < CURRENT_TIMESTAMP')->rowCount();
-        $counts['telegram_updates'] = $this->database->execute("DELETE FROM telegram_updates WHERE (processed_at IS NOT NULL AND processed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 7 DAY)) OR received_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)")->rowCount();
-        $counts['api_metrics'] = $this->database->execute('DELETE FROM api_request_metrics WHERE created_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 90 DAY)')->rowCount();
-        $counts['completed_jobs'] = $this->database->execute("DELETE FROM queue_jobs WHERE status = 'completed' AND completed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)")->rowCount();
+        $counts['deployment_packages'] = $this->database->execute('DELETE FROM deployment_packages WHERE expires_at < CURRENT_TIMESTAMP AND consumed_at IS NULL')->rowCount();
+        $counts['telegram_updates'] = $this->database->execute('DELETE FROM telegram_updates WHERE (processed_at IS NOT NULL AND processed_at < ?) OR received_at < ?', [$this->beforeDays(7), $this->beforeDays(30)])->rowCount();
+        $counts['api_metrics'] = $this->database->execute('DELETE FROM api_request_metrics WHERE created_at < ?', [$this->beforeDays(90)])->rowCount();
+        $counts['completed_jobs'] = $this->database->execute("DELETE FROM queue_jobs WHERE status = 'completed' AND completed_at < ?", [$this->beforeDays(30)])->rowCount();
         $auditDays = $this->setting('audit_retention_days', 365, 30, 3650);
-        $counts['audit_logs'] = $this->database->execute('DELETE FROM audit_logs WHERE created_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL ' . $auditDays . ' DAY)')->rowCount();
-        $counts['recent_actions'] = $this->database->execute('DELETE FROM recent_actions WHERE created_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 90 DAY)')->rowCount();
+        $counts['audit_logs'] = $this->database->execute('DELETE FROM audit_logs WHERE created_at < ?', [$this->beforeDays($auditDays)])->rowCount();
+        $counts['recent_actions'] = $this->database->execute('DELETE FROM recent_actions WHERE created_at < ?', [$this->beforeDays(90)])->rowCount();
         $threshold = time() - 86400;
         foreach (glob(rtrim($this->storageRoot, '/') . '/temp/*') ?: [] as $path) {
             if (is_file($path) && filemtime($path) !== false && filemtime($path) < $threshold) {
@@ -63,5 +62,10 @@ final class CleanupService
         $storage = rtrim(str_replace('\\', '/', $this->storageRoot), '/') . '/';
         $normalized = str_replace('\\', '/', $path);
         return str_starts_with($normalized, $storage) && !str_contains($normalized, '/../');
+    }
+
+    private function beforeDays(int $days): string
+    {
+        return gmdate('Y-m-d H:i:s', time() - ($days * 86400));
     }
 }

@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Installer\InstallerService;
+use App\Installer\InstallerException;
+use App\Core\Logger;
 
 $root = dirname(__DIR__);
 require $root . '/bootstrap/autoload.php';
@@ -12,6 +14,7 @@ header('X-Content-Type-Options: nosniff');
 header("Content-Security-Policy: default-src 'self'; style-src 'self' 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'");
 header('Referrer-Policy: no-referrer');
 session_name('tcpm_installer');
+ini_set('session.use_strict_mode', '1');
 session_set_cookie_params(['httponly' => true, 'secure' => true, 'samesite' => 'Strict', 'path' => '/']);
 session_start();
 $_SESSION['csrf'] ??= bin2hex(random_bytes(32));
@@ -23,7 +26,7 @@ $error = null;
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$inspection['installed']) {
     try {
         if (!isset($_POST['_csrf']) || !is_string($_POST['_csrf']) || !hash_equals($_SESSION['csrf'], $_POST['_csrf'])) {
-            throw new RuntimeException('Installer session expired. Refresh the page and try again.');
+            throw new InstallerException('installer_csrf_invalid', 'نشست نصب منقضی شده است. صفحه را تازه‌سازی و دوباره تلاش کنید.', 'The installer session expired. Refresh the page and try again.');
         }
         $allowed = ['bot_token', 'super_admin_id', 'db_username', 'db_password', 'db_name'];
         $input = [];
@@ -33,7 +36,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$inspection['installed']) {
         $result = $installer->install($input, array_map('strval', $_SERVER));
         session_regenerate_id(true);
     } catch (Throwable $exception) {
-        $error = $exception->getMessage();
+        $requestId = bin2hex(random_bytes(12));
+        (new Logger($root . '/storage/logs'))->error($exception, ['request_id' => $requestId, 'component' => 'installer']);
+        $error = $exception instanceof InstallerException
+            ? ['code' => $exception->safeCode, 'message_fa' => $exception->messageFa, 'message_en' => $exception->messageEn, 'request_id' => $requestId]
+            : ['code' => 'installer_failed', 'message_fa' => 'نصب به‌دلیل یک خطای داخلی کامل نشد. گزارش محافظت‌شده سرور را با شناسه زیر بررسی کنید.', 'message_en' => 'Installation did not complete because of an internal error. Check the protected server log using the reference below.', 'request_id' => $requestId];
+    } finally {
+        $_SESSION['csrf'] = bin2hex(random_bytes(32));
     }
 }
 
@@ -62,7 +71,7 @@ $e = static fn (mixed $value): string => htmlspecialchars((string) $value, ENT_Q
     <p>Cron command</p><code><?= $e($result['cron_command']) ?></code>
     <a class="button" href="<?= $e($result['app_url'] . '/telegram-setup') ?>">ادامه: Telegram Setup</a>
   <?php else: ?>
-    <?php if ($error !== null): ?><div class="notice danger"><strong>نصب کامل نشد · Installation failed</strong><br>مورد گزارش‌شده را اصلاح و دوباره ارسال کنید. Secretهای واردشده ثبت نشده‌اند.<br><span class="ltr"><?= $e($error) ?> — Fix the reported item and submit again. Entered secrets were not logged.</span></div><?php endif; ?>
+    <?php if ($error !== null): ?><div class="notice danger"><strong>نصب کامل نشد · Installation failed</strong><br><?= $e($error['message_fa']) ?><br><span class="ltr"><?= $e($error['message_en']) ?></span><small class="ltr">Code: <?= $e($error['code']) ?> · Reference: <?= $e($error['request_id']) ?></small><br>Secretهای واردشده نمایش یا ثبت نشده‌اند.<br><span class="ltr">Entered secrets were neither displayed nor logged.</span></div><?php endif; ?>
     <div class="checks"><?php foreach ($inspection['requirements'] as $req): ?><div class="check"><span class="<?= $req['ok'] ? 'yes' : 'no' ?>">●</span><span><?= $e($req['name']) ?> — <?= $e($req['message_fa']) ?><small class="ltr"><?= $e($req['message_en']) ?></small></span></div><?php endforeach; ?></div>
     <form method="post" autocomplete="off">
       <input type="hidden" name="_csrf" value="<?= $e($_SESSION['csrf']) ?>">
