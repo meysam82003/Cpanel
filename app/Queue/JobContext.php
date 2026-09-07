@@ -13,7 +13,7 @@ final class JobContext
 
     public function progress(int $percentage, string $message): void
     {
-        $this->queue->progress((int) $this->job['id'], $percentage, $message);
+        $this->queue->progress((int) $this->job['id'], (string) $this->job['reservation_token'], $percentage, $message);
     }
 
     public function userId(): ?int
@@ -26,4 +26,3 @@ final class JobContext
         return $this->job['account_id'] === null ? null : (int) $this->job['account_id'];
     }
 }
-

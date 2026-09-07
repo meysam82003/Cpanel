@@ -60,6 +60,16 @@ assert(migrations.length >= 4, `Expected at least four migrations, found ${migra
 const schema = migrations.map(read).join('\n');
 const requiredTables = ['users', 'user_plans', 'cpanel_accounts', 'account_capabilities', 'miniapp_sessions', 'replay_nonces', 'confirmation_nonces', 'rate_limits', 'audit_logs', 'security_events', 'queue_jobs', 'backups', 'deployments', 'database_connections', 'broadcast_deliveries'];
 for (const table of requiredTables) assert(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(schema), `Required table is missing: ${table}`);
+const migrationRunner = read('app/Core/MigrationRunner.php');
+assert(migrationRunner.includes('GET_LOCK') && migrationRunner.includes('RELEASE_LOCK'), 'MySQL migrations are not protected by an advisory lock.');
+assert(migrationRunner.includes("$this->driver === 'mysql'") && migrationRunner.includes('implicitly commit DDL'), 'MySQL DDL transaction semantics are not handled explicitly.');
+assert(!/ALTER\s+TABLE\s+[^;]+ADD\s+COLUMN[^;]+,\s*ADD\s+COLUMN/is.test(schema), 'A migration contains multiple ADD COLUMN operations in one non-resumable statement.');
+assert(schema.includes('reservation_token CHAR(64)'), 'Queue jobs do not persist an owner-bound lease token.');
+
+const queueSource = read('app/Queue/QueueService.php');
+assert(queueSource.includes('QUEUE_STALE_AFTER_SECONDS') || read('app/Core/Container.php').includes("Env::int('QUEUE_STALE_AFTER_SECONDS'"), 'Queue lease duration is not configurable.');
+assert(queueSource.includes('reserved_at = CURRENT_TIMESTAMP') && queueSource.includes('reservation_token = ?'), 'Queue progress does not renew an owner-bound lease.');
+assert(!queueSource.includes('DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 20 MINUTE)'), 'Queue recovery still uses the old hard-coded MySQL lease timeout.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

@@ -10,8 +10,14 @@ use App\Security\Crypto;
 
 final class QueueService
 {
-    public function __construct(private readonly Database $database, private readonly Crypto $crypto)
-    {
+    private readonly int $staleAfterSeconds;
+
+    public function __construct(
+        private readonly Database $database,
+        private readonly Crypto $crypto,
+        int $staleAfterSeconds = 3600,
+    ) {
+        $this->staleAfterSeconds = max(900, min(14400, $staleAfterSeconds));
     }
 
     /** @param array<string,mixed> $payload */
@@ -46,13 +52,22 @@ final class QueueService
     /** @return array<string,mixed>|null */
     public function claim(string $queue = 'default'): ?array
     {
-        return $this->database->transaction(function (Database $db) use ($queue): ?array {
-            $db->execute("UPDATE queue_jobs SET status = 'queued', reserved_at = NULL WHERE status = 'running' AND reserved_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 20 MINUTE)");
+        if (!preg_match('/^[a-z][a-z0-9_.-]{0,49}$/', $queue)) {
+            throw new AppException('Queue name is invalid.', 500, 'invalid_queue_name');
+        }
+        $staleBefore = gmdate('Y-m-d H:i:s', time() - $this->staleAfterSeconds);
+
+        return $this->database->transaction(function (Database $db) use ($queue, $staleBefore): ?array {
+            $this->recoverExpiredLeases($db, $queue, $staleBefore);
             $job = $db->one("SELECT * FROM queue_jobs WHERE queue = ? AND status = 'queued' AND available_at <= CURRENT_TIMESTAMP ORDER BY id ASC LIMIT 1 FOR UPDATE", [$queue]);
             if ($job === null) {
                 return null;
             }
-            $db->execute("UPDATE queue_jobs SET status = 'running', attempts = attempts + 1, reserved_at = CURRENT_TIMESTAMP, status_message = 'running' WHERE id = ? AND status = 'queued'", [$job['id']]);
+            $leaseToken = bin2hex(random_bytes(32));
+            $claimed = $db->execute("UPDATE queue_jobs SET status = 'running', attempts = attempts + 1, reserved_at = CURRENT_TIMESTAMP, reservation_token = ?, status_message = 'running', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'queued'", [$leaseToken, $job['id']]);
+            if ($claimed->rowCount() !== 1) {
+                return null;
+            }
             return $db->one('SELECT * FROM queue_jobs WHERE id = ?', [$job['id']]);
         });
     }
@@ -70,11 +85,14 @@ final class QueueService
         return $payload;
     }
 
-    public function progress(int $jobId, int $percentage, string $message): void
+    public function progress(int $jobId, string $leaseToken, int $percentage, string $message): void
     {
         $percentage = max(0, min(99, $percentage));
         $message = mb_substr(preg_replace('/[\x00-\x1F\x7F]/u', '', $message) ?? '', 0, 191);
-        $this->database->execute("UPDATE queue_jobs SET progress = ?, status_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'", [$percentage, $message, $jobId]);
+        $updated = $this->database->execute("UPDATE queue_jobs SET progress = ?, status_message = ?, reserved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running' AND reservation_token = ?", [$percentage, $message, $jobId, $leaseToken]);
+        if ($updated->rowCount() !== 1) {
+            throw new AppException('The queue job lease is no longer active.', 409, 'queue_lease_lost');
+        }
     }
 
     /** @param array<string,mixed> $job
@@ -83,21 +101,30 @@ final class QueueService
     public function complete(array $job, array $result): void
     {
         $encrypted = $this->crypto->encrypt(json_encode($result, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR), 'queue-result:' . $job['id'] . ':' . $job['job_type']);
-        $this->database->execute("UPDATE queue_jobs SET status = 'completed', progress = 100, status_message = 'completed', result_encrypted = ?, completed_at = CURRENT_TIMESTAMP, reserved_at = NULL WHERE id = ?", [$encrypted, $job['id']]);
+        $updated = $this->database->execute("UPDATE queue_jobs SET status = 'completed', progress = 100, status_message = 'completed', result_encrypted = ?, completed_at = CURRENT_TIMESTAMP, reserved_at = NULL, reservation_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running' AND reservation_token = ?", [$encrypted, $job['id'], $this->leaseToken($job)]);
+        if ($updated->rowCount() !== 1) {
+            throw new AppException('The queue job lease is no longer active.', 409, 'queue_lease_lost');
+        }
     }
 
     /** @param array<string,mixed> $job */
     public function fail(array $job, string $safeCode, string $safeMessage): void
     {
         $safeMessage = mb_substr($safeMessage, 0, 500);
+        $leaseToken = $this->leaseToken($job);
         if ((int) $job['attempts'] < (int) $job['max_attempts']) {
             $delay = min(900, 10 * (2 ** max(0, (int) $job['attempts'] - 1)));
-            $this->database->execute("UPDATE queue_jobs SET status = 'queued', progress = 0, status_message = 'retrying', last_error_code = ?, available_at = DATE_ADD(CURRENT_TIMESTAMP, INTERVAL ? SECOND), reserved_at = NULL WHERE id = ?", [$safeCode, $delay, $job['id']]);
+            $availableAt = gmdate('Y-m-d H:i:s', time() + $delay);
+            $this->database->execute("UPDATE queue_jobs SET status = 'queued', progress = 0, status_message = 'retrying', last_error_code = ?, available_at = ?, reserved_at = NULL, reservation_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running' AND reservation_token = ?", [$safeCode, $availableAt, $job['id'], $leaseToken]);
             return;
         }
-        $this->database->transaction(function (Database $db) use ($job, $safeCode, $safeMessage): void {
+        $this->database->transaction(function (Database $db) use ($job, $safeCode, $safeMessage, $leaseToken): void {
+            $active = $db->one("SELECT id FROM queue_jobs WHERE id = ? AND status = 'running' AND reservation_token = ? FOR UPDATE", [$job['id'], $leaseToken]);
+            if ($active === null) {
+                return;
+            }
             $db->execute('INSERT INTO queue_failed_jobs (original_job_id, queue, job_type, user_id, account_id, payload_encrypted, error_code, error_message_safe) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$job['id'], $job['queue'], $job['job_type'], $job['user_id'], $job['account_id'], $job['payload_encrypted'], $safeCode, $safeMessage]);
-            $db->execute("UPDATE queue_jobs SET status = 'failed', status_message = 'failed', last_error_code = ?, reserved_at = NULL, completed_at = CURRENT_TIMESTAMP WHERE id = ?", [$safeCode, $job['id']]);
+            $db->execute("UPDATE queue_jobs SET status = 'failed', status_message = 'failed', last_error_code = ?, reserved_at = NULL, reservation_token = NULL, completed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND reservation_token = ?", [$safeCode, $job['id'], $leaseToken]);
         });
     }
 
@@ -131,10 +158,30 @@ final class QueueService
             if ($job === null || (string) $job['status'] !== 'failed') {
                 throw new AppException('The failed job is no longer retryable.', 409, 'failed_job_not_retryable');
             }
-            $db->execute("UPDATE queue_jobs SET status = 'queued', progress = 0, status_message = 'queued', attempts = 0, available_at = CURRENT_TIMESTAMP, reserved_at = NULL, completed_at = NULL, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [$jobId]);
+            $db->execute("UPDATE queue_jobs SET status = 'queued', progress = 0, status_message = 'queued', attempts = 0, available_at = CURRENT_TIMESTAMP, reserved_at = NULL, reservation_token = NULL, completed_at = NULL, last_error_code = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?", [$jobId]);
             $db->execute('DELETE FROM queue_failed_jobs WHERE id = ?', [$failedJobId]);
             return $jobId;
         });
+    }
+
+    private function recoverExpiredLeases(Database $database, string $queue, string $staleBefore): void
+    {
+        $expired = $database->all("SELECT * FROM queue_jobs WHERE queue = ? AND status = 'running' AND (reserved_at IS NULL OR reserved_at < ?) AND attempts >= max_attempts FOR UPDATE", [$queue, $staleBefore]);
+        foreach ($expired as $job) {
+            $database->execute('INSERT INTO queue_failed_jobs (original_job_id, queue, job_type, user_id, account_id, payload_encrypted, error_code, error_message_safe) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [$job['id'], $job['queue'], $job['job_type'], $job['user_id'], $job['account_id'], $job['payload_encrypted'], 'queue_lease_expired', 'The worker lease expired before the operation completed.']);
+            $database->execute("UPDATE queue_jobs SET status = 'failed', status_message = 'failed', last_error_code = 'queue_lease_expired', completed_at = CURRENT_TIMESTAMP, reserved_at = NULL, reservation_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'running'", [$job['id']]);
+        }
+        $database->execute("UPDATE queue_jobs SET status = 'queued', status_message = 'queued', reserved_at = NULL, reservation_token = NULL, updated_at = CURRENT_TIMESTAMP WHERE queue = ? AND status = 'running' AND (reserved_at IS NULL OR reserved_at < ?) AND attempts < max_attempts", [$queue, $staleBefore]);
+    }
+
+    /** @param array<string,mixed> $job */
+    private function leaseToken(array $job): string
+    {
+        $token = (string) ($job['reservation_token'] ?? '');
+        if (!preg_match('/^[a-f0-9]{64}$/', $token)) {
+            throw new AppException('The queue job lease is invalid.', 409, 'queue_lease_lost');
+        }
+        return $token;
     }
 
     private function context(string $type, ?int $userId, ?int $accountId, string $idempotency): string

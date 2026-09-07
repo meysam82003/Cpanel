@@ -105,7 +105,7 @@ final class Container
             SqlConsoleService::class => new SqlConsoleService($this->get(Database::class), $this->get(DirectDatabaseConnectionService::class), $this->get(SqlSafetyAnalyzer::class), $this->get(Crypto::class), $this->get(AuditLogger::class)),
             SqlConsoleCoordinator::class => new SqlConsoleCoordinator($this->get(Database::class), $this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(SqlConsoleService::class), $this->root . '/storage/backups'),
             DatabaseDumpWriter::class => new DatabaseDumpWriter(),
-            QueueService::class => new QueueService($this->get(Database::class), $this->get(Crypto::class)),
+            QueueService::class => new QueueService($this->get(Database::class), $this->get(Crypto::class), Env::int('QUEUE_STALE_AFTER_SECONDS', 3600)),
             SqlTransferService::class => new SqlTransferService($this->get(QueueService::class), $this->root . '/storage/temp'),
             DomainService::class => new DomainService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
             EmailService::class => new EmailService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
