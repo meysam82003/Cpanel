@@ -75,6 +75,8 @@ const queueSource = read('app/Queue/QueueService.php');
 assert(queueSource.includes('QUEUE_STALE_AFTER_SECONDS') || read('app/Core/Container.php').includes("Env::int('QUEUE_STALE_AFTER_SECONDS'"), 'Queue lease duration is not configurable.');
 assert(queueSource.includes('reserved_at = CURRENT_TIMESTAMP') && queueSource.includes('reservation_token = ?'), 'Queue progress does not renew an owner-bound lease.');
 assert(!queueSource.includes('DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 20 MINUTE)'), 'Queue recovery still uses the old hard-coded MySQL lease timeout.');
+const operationLocks = read('app/Security/OperationLockService.php');
+assert(operationLocks.includes('function renew(') && operationLocks.includes('expires_at >= CURRENT_TIMESTAMP') && operationLocks.includes('operation_lock_lost'), 'Long-running operation locks cannot be owner-renewed safely.');
 assert(read('app/Queue/CleanupService.php').includes("'user_sessions'"), 'Expired bot sessions are not cleaned up.');
 assert(read('app/Core/Container.php').includes("'file.download' => new FileDownloadJobHandler"), 'Prepared downloads are not connected to the queue worker.');
 assert(read('app/FileManager/DownloadService.php').includes("status = 'ready'") && read('app/FileManager/DownloadService.php').includes('download_integrity_failed'), 'Secure downloads are not prepared and integrity-checked before serving.');
