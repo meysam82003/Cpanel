@@ -1,0 +1,14 @@
+/.env
+/vendor/
+/storage/cache/*
+/storage/logs/*
+/storage/temp/*
+/storage/sessions/*
+/storage/locks/*
+/storage/backups/*
+/storage/downloads/*
+!/storage/**/.gitkeep
+/.phpunit.cache/
+/coverage/
+*.zip
+
