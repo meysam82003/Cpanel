@@ -39,7 +39,7 @@ final class FileVersionService
                     'sourcefiles' => ltrim($remotePath, '/'),
                     'destfiles' => ltrim($backupPath, '/'),
                     'doubledecode' => 0,
-                ]);
+                ], false);
             }
             $this->database->execute(
                 'INSERT INTO file_versions (user_id, account_id, remote_path, version_number, backup_path, size_bytes) VALUES (?, ?, ?, ?, ?, ?)',
@@ -104,7 +104,7 @@ final class FileVersionService
                 continue;
             }
             try {
-                $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $current, 'name' => $segment, 'permissions' => '0700']);
+                $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $current, 'name' => $segment, 'permissions' => '0700'], false);
             } catch (\App\Cpanel\CpanelApiException $exception) {
                 $check = $this->cpanel->call($connection, 'Fileman', 'get_file_information', ['path' => $current . '/' . $segment]);
                 $metadata = $this->first($check['data']);

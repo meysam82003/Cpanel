@@ -108,4 +108,8 @@ return [
     'notification.file_title' => 'وضعیت آپلود فایل',
     'notification.file_upload_done' => 'فایل :name با موفقیت آپلود شد (Job #:job) و نسخه موقت Telegram پاک شد.',
     'notification.file_upload_failed' => 'آپلود :name پس از تلاش‌های امن کامل نشد (Job #:job، کد: :code). برای راهنمایی صفحه Jobها یا راهنمای File Manager را باز کنید.',
+    'notification.archive_title' => 'وضعیت عملیات Archive',
+    'notification.archive_create_done' => 'Archive با نام :name با موفقیت ساخته شد (Job #:job).',
+    'notification.archive_extract_done' => 'Archive با نام :name پس از بررسی امنیتی با موفقیت Extract شد (Job #:job).',
+    'notification.archive_failed' => 'عملیات Archive برای :name کامل نشد (Job #:job، کد: :code). پیش از تلاش دوباره راهنمای File Manager را بررسی کنید.',
 ];

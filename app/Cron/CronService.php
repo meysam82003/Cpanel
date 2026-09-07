@@ -35,7 +35,7 @@ final class CronService
         if ($inspection['dangerous'] && !$dangerousConfirmed) {
             throw new AppException('This cron command matches dangerous command patterns and requires explicit confirmation.', 409, 'dangerous_cron_confirmation_required', ['reasons' => $inspection['reasons']], 'cron.commands');
         }
-        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'add_line', $schedule + ['command' => trim($command)]);
+        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'add_line', $schedule + ['command' => trim($command)], false);
         $this->audit->record($userId, $accountId, 'cron.create', 'success', 'cron', hash('sha256', $command), ['schedule' => $expression, 'dangerous_patterns' => $inspection['reasons'], 'provider_api' => 'api2_no_uapi_equivalent']);
         return ['schedule' => $schedule, 'provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }
@@ -59,7 +59,7 @@ final class CronService
             'command' => trim($command),
             'linekey' => $lineKey,
         ];
-        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'edit_line', $params);
+        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'edit_line', $params, false);
         $this->audit->record($userId, $accountId, 'cron.update', 'success', 'cron', $lineKey, ['schedule' => $expression, 'dangerous_patterns' => $inspection['reasons'], 'provider_api' => 'api2_no_uapi_equivalent']);
         return ['provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }
@@ -73,7 +73,7 @@ final class CronService
         if ($lineKey < 1) {
             throw new AppException('Cron line number is invalid.', 422, 'invalid_cron_id', [], 'cron.overview');
         }
-        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'remove_line', ['line' => $lineKey]);
+        $result = $this->cpanel->callLegacyApi2($this->accounts->connection($userId, $accountId), 'Cron', 'remove_line', ['line' => $lineKey], false);
         $this->audit->record($userId, $accountId, 'cron.delete', 'success', 'cron', (string) $lineKey, ['schedule' => implode(' ', array_slice(array_values($old), 0, 5)), 'provider_api' => 'api2_no_uapi_equivalent']);
         return ['provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }

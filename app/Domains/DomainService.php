@@ -324,7 +324,7 @@ final class DomainService
                 throw $exception;
             }
         }
-        return [$this->cpanel->callLegacyApi2($connection, 'AddonDomain', $function, $parameters), 'api2_compatibility'];
+        return [$this->cpanel->callLegacyApi2($connection, 'AddonDomain', $function, $parameters, false), 'api2_compatibility'];
     }
 
     /** @param array{base_url:string,username:string,token:string} $connection
@@ -357,7 +357,7 @@ final class DomainService
                 throw $exception;
             }
         }
-        return [$this->cpanel->callLegacyApi2($connection, 'SubDomain', $function, $parameters), 'api2_compatibility'];
+        return [$this->cpanel->callLegacyApi2($connection, 'SubDomain', $function, $parameters, false), 'api2_compatibility'];
     }
 
     /** @return list<array<string,mixed>> */

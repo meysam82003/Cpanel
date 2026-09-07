@@ -62,7 +62,7 @@ assert(installerService.includes('LOCK_EX | LOCK_NB') && installerService.includ
 const migrations = walk('database/migrations').filter(file => file.endsWith('.sql')).sort();
 assert(migrations.length >= 4, `Expected at least four migrations, found ${migrations.length}.`);
 const schema = migrations.map(read).join('\n');
-const requiredTables = ['users', 'user_plans', 'cpanel_accounts', 'account_capabilities', 'miniapp_sessions', 'replay_nonces', 'confirmation_nonces', 'rate_limits', 'audit_logs', 'security_events', 'queue_jobs', 'backups', 'deployments', 'database_connections', 'broadcast_deliveries'];
+const requiredTables = ['users', 'user_plans', 'cpanel_accounts', 'account_capabilities', 'miniapp_sessions', 'replay_nonces', 'confirmation_nonces', 'rate_limits', 'audit_logs', 'security_events', 'queue_jobs', 'file_archive_jobs', 'backups', 'deployments', 'database_connections', 'broadcast_deliveries'];
 for (const table of requiredTables) assert(new RegExp(`CREATE TABLE IF NOT EXISTS ${table}\\b`).test(schema), `Required table is missing: ${table}`);
 const migrationRunner = read('app/Core/MigrationRunner.php');
 assert(migrationRunner.includes('GET_LOCK') && migrationRunner.includes('RELEASE_LOCK'), 'MySQL migrations are not protected by an advisory lock.');
@@ -87,6 +87,17 @@ assert(telegramUpload.includes('@unlink($temporary)') && telegramUpload.includes
 assert(!read('app/Telegram/BotHandler.php').includes('downloadFile($fileId'), 'Telegram file download still blocks the webhook request instead of using the queue.');
 assert(read('app/FileManager/TelegramUploadService.php').includes('OFFICIAL_BOT_API_DOWNLOAD_LIMIT = 20_000_000'), 'Telegram Bot API download cap is not enforced.');
 assert(!read('database/migrations/008_telegram_file_uploads.sql').includes('file_id'), 'Raw Telegram file identifiers must remain only inside encrypted queue payloads.');
+const containerSource = read('app/Core/Container.php');
+assert(containerSource.includes("'file.archive_create' => new ArchiveCreateJobHandler") && containerSource.includes("'file.archive_extract' => new ArchiveExtractJobHandler"), 'Archive operations are not connected to both queue handlers.');
+const archiveRoutes = read('routes/api/files.php');
+assert(archiveRoutes.includes('enqueueCreate(') && archiveRoutes.includes('enqueueExtract(') && !archiveRoutes.includes('return $files->compress(') && !archiveRoutes.includes('=> $files->extract('), 'Archive API routes do not exclusively enqueue the durable workflow.');
+const archiveService = read('app/FileManager/ArchiveService.php');
+assert(archiveService.includes('getOwned($userId, $accountId)') && archiveService.includes('safeApi2Path(') && archiveService.includes("'default', 1"), 'Archive queueing lacks tenant ownership, API-path validation, or single-attempt safety.');
+assert(archiveService.includes("['reject', 'overwrite']") && archiveRoutes.includes("'archive.extract_overwrite'"), 'Archive extraction collision policy or one-time overwrite confirmation is missing.');
+const archiveExtract = read('app/FileManager/ArchiveExtractJobHandler.php');
+assert(archiveExtract.includes('downloadTo(') && archiveExtract.includes('->validate(') && archiveExtract.includes('staging_archive'), 'Archive extraction is not streamed, validated, and bound to an immutable staging copy.');
+assert(archiveExtract.includes("hash_equals((string) $summary['sha256'], (string) $stagedDownload['sha256'])") && archiveExtract.includes('archive_reconciliation_required'), 'Archive staging integrity or ambiguous-outcome reconciliation is missing.');
+assert(archiveExtract.includes('@unlink($temporary)') && archiveExtract.includes('@unlink($verificationTemporary)'), 'Archive inspection temporary files are not cleaned.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {
@@ -110,6 +121,8 @@ assert(cpanelSources.includes("'redirect_wildcard'") && cpanelSources.includes("
 assert(cpanelSources.includes("'directive-' . $position") && cpanelSources.includes("$key . ':'"), 'PHP INI directives do not match the current LangPHP contract.');
 assert(cpanelSources.includes("'api.paginate.enable'") && cpanelSources.includes("'api.paginate.start'"), 'UAPI server-side pagination controls are missing.');
 assert(cpanelSources.includes('isOperationUnavailable') && cpanelSources.includes('api2_compatibility'), 'Version-aware cPanel API compatibility policy is missing.');
+assert(read('app/Cpanel/UapiClient.php').includes('$idempotent ? $validated[\'ips\'] : array_slice($validated[\'ips\'], 0, 1)'), 'Non-idempotent cPanel API 2 calls are not protected from multi-IP replay.');
+assert(read('app/FileManager/FileManagerService.php').includes("'op' => 'extract'") && read('app/FileManager/FileManagerService.php').includes("'doubledecode' => 0], false"), 'Archive mutations do not explicitly disable provider-call replay.');
 
 const helpSource = read('resources/help/topics.php');
 const helpSlugs = new Set([...helpSource.matchAll(/'slug'\s*=>\s*'([^']+)'/g)].map(match => match[1]));

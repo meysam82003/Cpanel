@@ -108,4 +108,8 @@ return [
     'notification.file_title' => 'File upload status',
     'notification.file_upload_done' => ':name was uploaded successfully (job #:job). The temporary Telegram copy was removed.',
     'notification.file_upload_failed' => ':name could not be uploaded after safe retries (job #:job, code: :code). Open Jobs or File Manager help for guidance.',
+    'notification.archive_title' => 'Archive operation status',
+    'notification.archive_create_done' => 'Archive :name was created successfully (job #:job).',
+    'notification.archive_extract_done' => 'Archive :name was inspected and extracted successfully (job #:job).',
+    'notification.archive_failed' => 'Archive operation for :name did not complete (job #:job, code: :code). Review File Manager help before trying again.',
 ];

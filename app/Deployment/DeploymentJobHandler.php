@@ -181,7 +181,7 @@ final class DeploymentJobHandler implements JobHandler
                 continue;
             }
             try {
-                $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $current, 'name' => $segment, 'permissions' => '0700']);
+                $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $current, 'name' => $segment, 'permissions' => '0700'], false);
             } catch (CpanelApiException $exception) {
                 $check = $this->cpanel->call($connection, 'Fileman', 'get_file_information', ['path' => $current . '/' . $segment]);
                 $item = is_array($check['data']) && array_is_list($check['data']) ? ($check['data'][0] ?? []) : $check['data'];
@@ -199,7 +199,7 @@ final class DeploymentJobHandler implements JobHandler
         $parent = dirname($directory);
         $this->ensureDirectory($connection, $parent, $root);
         try {
-            $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $parent, 'name' => basename($directory), 'permissions' => $permissions]);
+            $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $parent, 'name' => basename($directory), 'permissions' => $permissions], false);
         } catch (CpanelApiException $exception) {
             $check = $this->cpanel->call($connection, 'Fileman', 'get_file_information', ['path' => $directory]);
             $item = is_array($check['data']) && array_is_list($check['data']) ? ($check['data'][0] ?? []) : $check['data'];

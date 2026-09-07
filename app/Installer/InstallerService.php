@@ -144,6 +144,11 @@ final class InstallerService
             'TELEGRAM_DOWNLOAD_MAX_BYTES' => '20000000',
             'MAX_DOWNLOAD_BYTES' => '104857600',
             'TELEGRAM_SEND_MAX_BYTES' => '50000000',
+            'MAX_ARCHIVE_INSPECTION_BYTES' => '268435456',
+            'MAX_ARCHIVE_EXPANDED_BYTES' => '1073741824',
+            'MAX_ARCHIVE_FILES' => '10000',
+            'MAX_ARCHIVE_EXPANSION_RATIO' => '200',
+            'MAX_ARCHIVE_TOP_LEVEL_ENTRIES' => '500',
             'LOG_LEVEL' => 'warning',
         ];
         $webhookUrl = $urls['app_url'] . '/webhook/' . $secrets['webhook_secret'];

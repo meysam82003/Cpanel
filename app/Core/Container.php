@@ -35,6 +35,10 @@ use App\Deployment\RollbackJobHandler;
 use App\Deployment\ZipPackageValidator;
 use App\Domains\DomainService;
 use App\Email\EmailService;
+use App\FileManager\ArchiveCreateJobHandler;
+use App\FileManager\ArchiveExtractJobHandler;
+use App\FileManager\ArchiveSafetyValidator;
+use App\FileManager\ArchiveService;
 use App\FileManager\DownloadService;
 use App\FileManager\FileDownloadJobHandler;
 use App\FileManager\FileManagerService;
@@ -100,6 +104,8 @@ final class Container
             AccountService::class => new AccountService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(HostValidator::class), $this->get(UapiClient::class), $this->get(CapabilityDetector::class), $this->get(AuditLogger::class)),
             FileVersionService::class => new FileVersionService($this->get(Database::class), $this->get(UapiClient::class)),
             FileManagerService::class => new FileManagerService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(PathGuard::class), $this->get(FileVersionService::class), $this->get(AuditLogger::class)),
+            ArchiveSafetyValidator::class => new ArchiveSafetyValidator(),
+            ArchiveService::class => new ArchiveService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PlanGuard::class), $this->get(PathGuard::class), $this->get(QueueService::class), $this->get(AuditLogger::class)),
             DownloadService::class => new DownloadService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PathGuard::class), $this->get(UapiClient::class), $this->get(AuditLogger::class), $this->get(QueueService::class), $this->root . '/storage/downloads', Env::int('MAX_DOWNLOAD_BYTES', 104_857_600)),
             TelegramUploadService::class => new TelegramUploadService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PlanGuard::class), $this->get(PathGuard::class), $this->get(QueueService::class), Env::int('TELEGRAM_DOWNLOAD_MAX_BYTES', 20_000_000)),
             CpanelDatabaseService::class => new CpanelDatabaseService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
@@ -121,7 +127,7 @@ final class Container
             LogViewerService::class => new LogViewerService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(PathGuard::class), $this->root . '/storage/temp'),
             BackupService::class => new BackupService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(SqlTransferService::class), $this->get(AuditLogger::class), $this->get(NotificationService::class)),
             OperationLockService::class => new OperationLockService($this->get(Database::class)),
-            ZipPackageValidator::class => new ZipPackageValidator(),
+            ZipPackageValidator::class => new ZipPackageValidator($this->get(ArchiveSafetyValidator::class)),
             HealthCheckService::class => new HealthCheckService(new HostValidator(false, [443], 443)),
             DeploymentRollbackExecutor::class => new DeploymentRollbackExecutor($this->get(FileManagerService::class)),
             DeploymentPackageService::class => new DeploymentPackageService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(ZipPackageValidator::class)),
@@ -158,6 +164,8 @@ final class Container
             'sql.export' => new SqlExportJobHandler($this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(Database::class), $this->get(AuditLogger::class), $this->root . '/storage/downloads'),
             'file.download' => new FileDownloadJobHandler($this->get(DownloadService::class), $this->get(Database::class), $this->get(TelegramClient::class), $this->get(Translator::class), (string) Config::app('url'), Env::int('TELEGRAM_SEND_MAX_BYTES', 50_000_000)),
             'telegram.file_upload' => new TelegramFileUploadJobHandler($this->get(Database::class), $this->get(TelegramUploadService::class), $this->get(FileManagerService::class), $this->get(PlanGuard::class), $this->get(TelegramClient::class), $this->get(AuditLogger::class), $this->root . '/storage/temp'),
+            'file.archive_create' => new ArchiveCreateJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class)),
+            'file.archive_extract' => new ArchiveExtractJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(ArchiveSafetyValidator::class), $this->root . '/storage/temp', Env::int('MAX_ARCHIVE_INSPECTION_BYTES', 268_435_456), Env::int('MAX_ARCHIVE_EXPANDED_BYTES', 1_073_741_824), Env::int('MAX_ARCHIVE_FILES', 10_000), Env::int('MAX_ARCHIVE_EXPANSION_RATIO', 200), Env::int('MAX_ARCHIVE_TOP_LEVEL_ENTRIES', 500)),
             'deployment.run' => new DeploymentJobHandler($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(HealthCheckService::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
             'deployment.rollback' => new RollbackJobHandler($this->get(Database::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
             'admin.broadcast' => new BroadcastJobHandler($this->get(Database::class), $this->get(QueueService::class), $this->get(TelegramClient::class)),

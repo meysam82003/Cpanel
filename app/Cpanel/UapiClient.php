@@ -162,7 +162,7 @@ final class UapiClient
      * @param array<string,scalar|null> $parameters
      * @return array{data:mixed,metadata:array<string,mixed>,messages:list<string>,warnings:list<string>}
      */
-    public function callLegacyApi2(array $connection, string $module, string $function, array $parameters = []): array
+    public function callLegacyApi2(array $connection, string $module, string $function, array $parameters = [], bool $idempotent = true): array
     {
         $this->assertIdentifier($module, 'module');
         $this->assertIdentifier($function, 'function');
@@ -175,7 +175,8 @@ final class UapiClient
         ];
         $url = $validated['base_url'] . '/json-api/cpanel?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
         $last = null;
-        foreach ($validated['ips'] as $ip) {
+        $candidateIps = $idempotent ? $validated['ips'] : array_slice($validated['ips'], 0, 1);
+        foreach ($candidateIps as $ip) {
             try {
                 return $this->performLegacy($validated, $ip, $connection, $url, $module, $function);
             } catch (CpanelApiException $exception) {

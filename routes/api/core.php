@@ -101,7 +101,7 @@ return static function (ApiKernel $api, Container $container): void {
         return ['removed' => true];
     }, 10);
 
-    $allowedConfirmationActions = ['host.remove', 'file.delete_permanent', 'file.delete_recursive', 'file.replace_sensitive', 'file.restore_version', 'trash.empty', 'database.delete', 'database_user.delete', 'database.remote_host_delete', 'row.delete', 'row.bulk_delete', 'table.drop', 'table.truncate', 'column.drop', 'index.drop', 'sql.execute', 'domain.delete', 'subdomain.delete', 'redirect.delete', 'dns.edit', 'email.delete', 'email.forwarder_delete', 'email.autoresponder_delete', 'ssl.autossl', 'cron.save', 'cron.delete', 'backup.restore', 'backup.delete', 'deployment.run', 'deployment.rollback', 'php.version', 'php.ini'];
+    $allowedConfirmationActions = ['host.remove', 'file.delete_permanent', 'file.delete_recursive', 'file.replace_sensitive', 'file.restore_version', 'trash.empty', 'archive.extract_overwrite', 'database.delete', 'database_user.delete', 'database.remote_host_delete', 'row.delete', 'row.bulk_delete', 'table.drop', 'table.truncate', 'column.drop', 'index.drop', 'sql.execute', 'domain.delete', 'subdomain.delete', 'redirect.delete', 'dns.edit', 'email.delete', 'email.forwarder_delete', 'email.autoresponder_delete', 'ssl.autossl', 'cron.save', 'cron.delete', 'backup.restore', 'backup.delete', 'deployment.run', 'deployment.rollback', 'php.version', 'php.ini'];
     $api->route('POST', '/api/v1/confirmations', static function (Request $request, array $params, array $session) use ($confirmations, $accounts, $allowedConfirmationActions): array {
         $userId = (int) $session['user_id'];
         $accountId = $request->input('account_id');

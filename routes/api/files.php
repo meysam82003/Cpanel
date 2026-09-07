@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Core\AppException;
 use App\Core\Container;
+use App\FileManager\ArchiveService;
 use App\FileManager\DownloadService;
 use App\FileManager\FileManagerService;
 use App\Http\ApiKernel;
@@ -14,6 +15,7 @@ use App\Security\ConfirmationService;
 
 return static function (ApiKernel $api, Container $container): void {
     $files = $container->get(FileManagerService::class);
+    $archives = $container->get(ArchiveService::class);
     $downloads = $container->get(DownloadService::class);
     $uploads = $container->get(UploadReceiver::class);
     $plans = $container->get(PlanGuard::class);
@@ -82,14 +84,24 @@ return static function (ApiKernel $api, Container $container): void {
         $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'trash.empty', 'trash');
         return $files->emptyTrash($userId, $accountId);
     }, 10);
-    $api->route('POST', '/api/v1/hosts/{account}/archives', static function (Request $request, array $params, array $session) use ($files): array {
+    $api->route('POST', '/api/v1/hosts/{account}/archives', static function (Request $request, array $params, array $session) use ($archives): array {
         $sources = $request->input('sources', []);
         if (!is_array($sources)) {
             throw new AppException('Archive sources must be a list.', 422, 'invalid_archive_request', [], 'files.zip');
         }
-        return $files->compress((int) $session['user_id'], (int) $params['account'], array_values(array_map('strval', $sources)), (string) $request->input('destination', ''), (string) $request->input('format', 'zip'));
+        return $archives->enqueueCreate((int) $session['user_id'], (int) $params['account'], array_values($sources), (string) $request->input('destination', ''), (string) $request->input('format', 'zip'));
     }, 15);
-    $api->route('POST', '/api/v1/hosts/{account}/archives/extract', static fn (Request $request, array $params, array $session): array => $files->extract((int) $session['user_id'], (int) $params['account'], (string) $request->input('archive', ''), (string) $request->input('destination', '')), 15);
+    $api->route('POST', '/api/v1/hosts/{account}/archives/extract', static function (Request $request, array $params, array $session) use ($archives, $confirmations): array {
+        $userId = (int) $session['user_id'];
+        $accountId = (int) $params['account'];
+        $archive = (string) $request->input('archive', '');
+        $destination = (string) $request->input('destination', '');
+        $collision = (string) $request->input('collision', 'reject');
+        if ($collision === 'overwrite') {
+            $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'archive.extract_overwrite', $archive . '|' . $destination);
+        }
+        return $archives->enqueueExtract($userId, $accountId, $archive, $destination, $collision);
+    }, 15);
     $api->route('GET', '/api/v1/hosts/{account}/files/search', static fn (Request $request, array $params, array $session): array => ['items' => $files->search((int) $session['user_id'], (int) $params['account'], (string) $request->input('directory', '.'), (string) $request->input('q', ''), (string) $request->input('type', 'all'))], 60);
 
     $api->route('GET', '/api/v1/hosts/{account}/files/versions', static fn (Request $request, array $params, array $session): array => ['versions' => $files->versionHistory((int) $session['user_id'], (int) $params['account'], (string) $request->input('path', ''))]);

@@ -920,9 +920,51 @@ class ManagerApp {
   copyFile(path) { this.openForm('copy', `<div class="field"><label>${escapeHtml(t('source'))}</label><input value="${escapeAttr(path)}" readonly></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(path)}" required dir="ltr"></div>`, 'copy', async form => { await this.api.request(this.hostPath('/files/copy'), {method: 'POST', body: {source: path, destination: form.elements.destination.value}}); this.closeDialog(); await this.render(); }); }
   deleteFile(path, directory) { this.openForm('remove', `<div class="notice ${directory ? 'danger' : 'warning'}"><strong>${escapeHtml(t(directory ? 'danger' : 'warning'))}</strong>${escapeHtml(t('warningFileDelete'))}</div><pre class="code">${escapeHtml(path)}</pre><label class="check"><input name="permanent" type="checkbox">${escapeHtml(t('emptyTrash'))}</label>`, 'remove', async form => { const permanent = form.elements.permanent.checked; let confirmation = null; if (permanent || directory) { const issued = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: permanent ? 'file.delete_permanent' : 'file.delete_recursive', target: path, preview: {path, permanent, directory}}}); confirmation = issued.nonce; } await this.api.request(this.hostPath('/files'), {method: 'DELETE', body: {path, permanent, confirmation}}); this.closeDialog(); await this.render(); }, true); }
   async fileInfo(path) { const info = await this.api.request(query(this.hostPath('/files/info'), {path})); this.openInfo('fileInfo', `<pre class="code">${escapeHtml(formatJson(info))}</pre>`); }
-  extractFile(path) { this.openForm('extract', `<div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(this.params.path || '.')}" required dir="ltr"></div>`, 'extract', async form => { await this.api.request(this.hostPath('/archives/extract'), {method: 'POST', body: {archive: path, destination: form.elements.destination.value}}); this.closeDialog(); await this.render(); }); }
+  extractFile(path) {
+    this.openForm('extract', `<div class="notice warning"><strong>${escapeHtml(t('warning'))}</strong>${escapeHtml(t('archiveQueueHint'))}</div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(this.params.path || '.')}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('archivePolicy'))}</label><select name="collision"><option value="reject">${escapeHtml(t('rejectExisting'))}</option><option value="overwrite">${escapeHtml(t('overwriteExisting'))}</option></select></div><div class="notice danger" id="archive-overwrite-warning" hidden>${escapeHtml(t('warningArchiveOverwrite'))}</div><div id="job-progress"></div>`, 'extract', async form => {
+      const destination = form.elements.destination.value;
+      const collision = form.elements.collision.value;
+      let confirmation = null;
+      if (collision === 'overwrite') {
+        const issued = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'archive.extract_overwrite', target: `${path}|${destination}`, preview: {archive: path, destination, collision}}});
+        confirmation = issued.nonce;
+      }
+      const result = await this.api.request(this.hostPath('/archives/extract'), {method: 'POST', body: {archive: path, destination, collision, confirmation}});
+      $('#dialog-body').innerHTML = `<div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`;
+      $('#dialog-actions').innerHTML = '';
+      this.dialogSubmit = null;
+      await this.pollJob(Number(result.job_id), false);
+      this.closeDialog();
+      await this.render();
+    }, true);
+    const policy = $('select[name="collision"]', this.dialogForm);
+    const warning = $('#archive-overwrite-warning', this.dialogForm);
+    const syncWarning = () => { if (warning) warning.hidden = policy?.value !== 'overwrite'; };
+    policy?.addEventListener('change', syncWarning);
+    syncWarning();
+  }
   async restoreTrash(path) { await this.api.request(this.hostPath('/trash/restore'), {method: 'POST', body: {path}}); await this.render(); }
-  archiveSelected() { const sources = [...this.fileSelection]; this.openForm('archive', `<div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr((this.params.path || '.') + '/archive.zip')}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('format'))}</label><select name="format"><option>zip</option><option>tar.gz</option><option>tar.bz2</option><option>tar</option></select></div>`, 'archive', async form => { await this.api.request(this.hostPath('/archives'), {method: 'POST', body: {sources, destination: form.elements.destination.value, format: form.elements.format.value}}); this.closeDialog(); await this.render(); }); }
+  archiveSelected() {
+    const sources = [...this.fileSelection];
+    const directory = (this.params.path || '.').replace(/\/$/, '');
+    const singleOnlyDisabled = sources.length === 1 ? '' : ' disabled';
+    this.openForm('archive', `<div class="notice"><strong>${escapeHtml(t('info'))}</strong>${escapeHtml(t('archiveQueueHint'))}</div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(directory + '/archive.zip')}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('format'))}</label><select name="format"><option>zip</option><option>tar.gz</option><option>tar.bz2</option><option>tar</option><option${singleOnlyDisabled}>gz</option><option${singleOnlyDisabled}>bz2</option></select></div><div id="job-progress"></div>`, 'archive', async form => {
+      const result = await this.api.request(this.hostPath('/archives'), {method: 'POST', body: {sources, destination: form.elements.destination.value, format: form.elements.format.value}});
+      $('#dialog-body').innerHTML = `<div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`;
+      $('#dialog-actions').innerHTML = '';
+      this.dialogSubmit = null;
+      await this.pollJob(Number(result.job_id), false);
+      this.fileSelection.clear();
+      this.closeDialog();
+      await this.render();
+    });
+    const format = $('select[name="format"]', this.dialogForm);
+    const destination = $('input[name="destination"]', this.dialogForm);
+    format?.addEventListener('change', () => {
+      const suffix = {zip: '.zip', 'tar.gz': '.tar.gz', 'tar.bz2': '.tar.bz2', tar: '.tar', gz: '.gz', bz2: '.bz2'}[format.value] || '.zip';
+      destination.value = destination.value.replace(/(?:\.tar\.gz|\.tar\.bz2|\.tgz|\.tbz2|\.zip|\.tar|\.gz|\.bz2)$/i, '') + suffix;
+    });
+  }
   async deleteSelectedFiles() { const selected = [...this.fileSelection]; for (const path of selected) { const checkbox = $(`.file-check[data-path="${CSS.escape(path)}"]`); const directory = checkbox?.closest('.list-row')?.querySelector('[data-action="file-open"]')?.dataset.directory === '1'; if (directory) { const issued = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'file.delete_recursive', target: path, preview: {path}}}); await this.api.request(this.hostPath('/files'), {method: 'DELETE', body: {path, permanent: false, confirmation: issued.nonce}}); } else await this.api.request(this.hostPath('/files'), {method: 'DELETE', body: {path, permanent: false}}); } this.toast(t('success')); await this.render(); }
   moveSelectedFiles() { const selected = [...this.fileSelection]; this.openForm('move', `<div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(this.params.path || '.')}" required dir="ltr"></div>`, 'move', async form => { const destination = form.elements.destination.value.replace(/\/$/, ''); for (const source of selected) await this.api.request(this.hostPath('/files/move'), {method: 'POST', body: {source, destination: `${destination}/${source.split('/').pop()}`}}); this.closeDialog(); await this.render(); }); }
   saveEditorAs() { this.openForm('saveAs', `<div class="field"><label>${escapeHtml(t('path'))}</label><input name="path" value="${escapeAttr(this.editorState.path)}" required dir="ltr"></div>`, 'save', async form => { this.closeDialog(); await this.saveEditor(form.elements.path.value); }); }

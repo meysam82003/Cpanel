@@ -133,7 +133,7 @@ final class FileManagerService
         if (!preg_match('/^0[0-7]{3}$/', $permissions)) {
             throw new AppException('Directory permissions must be a four-digit octal value.', 422, 'invalid_permissions');
         }
-        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $safeDirectory, 'name' => $name, 'permissions' => $permissions]);
+        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'mkdir', ['path' => $safeDirectory, 'name' => $name, 'permissions' => $permissions], false);
         $path = $safeDirectory . '/' . $name;
         $this->audit->record($userId, $accountId, 'directory.create', 'success', 'directory', $path, ['permissions' => $permissions, 'api' => 'api2_no_uapi_equivalent']);
         return ['path' => $path, 'cpanel' => $result['data']];
@@ -176,7 +176,7 @@ final class FileManagerService
             if (!$this->cpanel->isOperationUnavailable($exception)) {
                 throw $exception;
             }
-            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'move', 'sourcefiles' => ltrim($safeSource, '/'), 'destfiles' => ltrim($safeDestination, '/'), 'doubledecode' => 0]);
+            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'move', 'sourcefiles' => ltrim($safeSource, '/'), 'destfiles' => ltrim($safeDestination, '/'), 'doubledecode' => 0], false);
             $providerApi = 'api2_compatibility';
         }
         $this->audit->record($userId, $accountId, 'file.move', 'success', 'path', $safeSource, ['destination' => $safeDestination, 'provider_api' => $providerApi]);
@@ -195,7 +195,7 @@ final class FileManagerService
             if (!$this->cpanel->isOperationUnavailable($exception)) {
                 throw $exception;
             }
-            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'copy', 'sourcefiles' => ltrim($safeSource, '/'), 'destfiles' => ltrim($safeDestination, '/'), 'doubledecode' => 0]);
+            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'copy', 'sourcefiles' => ltrim($safeSource, '/'), 'destfiles' => ltrim($safeDestination, '/'), 'doubledecode' => 0], false);
             $providerApi = 'api2_compatibility';
         }
         $this->audit->record($userId, $accountId, 'file.copy', 'success', 'path', $safeSource, ['destination' => $safeDestination, 'provider_api' => $providerApi]);
@@ -215,7 +215,7 @@ final class FileManagerService
             if (!$this->cpanel->isOperationUnavailable($exception)) {
                 throw $exception;
             }
-            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => $permanent ? 'unlink' : 'trash', 'sourcefiles' => ltrim($safePath, '/'), 'doubledecode' => 0]);
+            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => $permanent ? 'unlink' : 'trash', 'sourcefiles' => ltrim($safePath, '/'), 'doubledecode' => 0], false);
             $providerApi = 'api2_compatibility';
         }
         $this->audit->record($userId, $accountId, $permanent ? 'file.delete_permanent' : 'file.trash', 'success', $isDirectory ? 'directory' : 'file', $safePath, ['provider_api' => $providerApi]);
@@ -233,7 +233,7 @@ final class FileManagerService
             if (!$this->cpanel->isOperationUnavailable($exception)) {
                 throw $exception;
             }
-            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'restorefile', 'sourcefiles' => ltrim($safePath, '/'), 'doubledecode' => 0]);
+            $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'restorefile', 'sourcefiles' => ltrim($safePath, '/'), 'doubledecode' => 0], false);
             $providerApi = 'api2_compatibility';
         }
         $this->audit->record($userId, $accountId, 'file.restore_trash', 'success', 'path', $safePath, ['provider_api' => $providerApi]);
@@ -256,25 +256,26 @@ final class FileManagerService
         if ($sources === [] || count($sources) > 100 || !in_array($format, ['zip', 'tar.gz', 'tar.bz2', 'tar', 'gz', 'bz2'], true)) {
             throw new AppException('Archive selection or format is invalid.', 422, 'invalid_archive_request', [], 'files.zip');
         }
-        [, $connection] = $this->context($userId, $accountId, '.');
-        $safeSources = array_map(fn (string $path): string => ltrim($this->context($userId, $accountId, $path)[3], '/'), $sources);
-        $safeDestination = ltrim($this->context($userId, $accountId, $destination)[3], '/');
-        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'compress', 'sourcefiles' => implode(',', $safeSources), 'destfiles' => $safeDestination, 'metadata' => $format, 'doubledecode' => 0]);
-        $this->audit->record($userId, $accountId, 'file.compress', 'success', 'archive', '/' . $safeDestination, ['count' => count($safeSources), 'format' => $format]);
-        return ['destination' => '/' . $safeDestination, 'cpanel' => $result['data']];
+        [, $connection, $root] = $this->context($userId, $accountId, '.');
+        $safeSources = array_map(fn (string $path): string => $this->archiveApiPath($this->context($userId, $accountId, $path)[3], $root), $sources);
+        $canonicalDestination = $this->context($userId, $accountId, $destination)[3];
+        $safeDestination = $this->archiveApiPath($canonicalDestination, $root);
+        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'compress', 'sourcefiles' => implode(',', $safeSources), 'destfiles' => $safeDestination, 'metadata' => $format, 'doubledecode' => 0], false);
+        $this->audit->record($userId, $accountId, 'file.compress', 'success', 'archive', $canonicalDestination, ['count' => count($safeSources), 'format' => $format, 'provider_api' => 'api2_no_uapi_equivalent']);
+        return ['destination' => $canonicalDestination, 'provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }
 
     /** @return array<string,mixed> */
     public function extract(int $userId, int $accountId, string $archive, string $destination): array
     {
-        [, $connection, , $safeArchive] = $this->context($userId, $accountId, $archive);
+        [, $connection, $root, $safeArchive] = $this->context($userId, $accountId, $archive);
         [, , , $safeDestination] = $this->context($userId, $accountId, $destination);
         if (!preg_match('/\.(?:zip|tar|tar\.gz|tgz|tar\.bz2|tbz2|gz|bz2)$/i', $safeArchive)) {
             throw new AppException('The selected file is not a supported archive.', 422, 'unsupported_archive', [], 'files.zip');
         }
-        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'extract', 'sourcefiles' => ltrim($safeArchive, '/'), 'destfiles' => ltrim($safeDestination, '/'), 'doubledecode' => 0]);
-        $this->audit->record($userId, $accountId, 'file.extract', 'success', 'archive', $safeArchive, ['destination' => $safeDestination]);
-        return ['archive' => $safeArchive, 'destination' => $safeDestination, 'cpanel' => $result['data']];
+        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', ['op' => 'extract', 'sourcefiles' => $this->archiveApiPath($safeArchive, $root), 'destfiles' => $this->archiveApiPath($safeDestination, $root), 'doubledecode' => 0], false);
+        $this->audit->record($userId, $accountId, 'file.extract', 'success', 'archive', $safeArchive, ['destination' => $safeDestination, 'provider_api' => 'api2_no_uapi_equivalent']);
+        return ['archive' => $safeArchive, 'destination' => $safeDestination, 'provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }
 
     /** @return list<array<string,mixed>> */
@@ -341,6 +342,19 @@ final class FileManagerService
             return 'apache';
         }
         return strtolower((string) pathinfo($name, PATHINFO_EXTENSION)) ?: 'text';
+    }
+
+    private function archiveApiPath(string $path, string $root): string
+    {
+        $this->paths->assertWithinRoot($path, $root);
+        $relative = ltrim(substr($path, strlen(rtrim($root, '/'))), '/');
+        if ($relative === '') {
+            return '.';
+        }
+        if (strlen($relative) > 1024 || str_contains($relative, ',') || preg_match('/[\x00-\x1F\x7F]/u', $relative)) {
+            throw new AppException('The path cannot be represented safely by the cPanel archive API.', 422, 'invalid_archive_path', [], 'files.zip');
+        }
+        return $relative;
     }
 
     public function resolveUploadName(int $userId, int $accountId, string $directory, string $name, string $policy): string
