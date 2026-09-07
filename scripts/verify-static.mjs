@@ -125,6 +125,18 @@ assert(deploymentHandler.includes('rollbackCheckpoint(') && deploymentRollback.i
 assert(deploymentRecovery.includes("'queue_lease_expired', 'queue_lease_lost', 'operation_locked', 'operation_lock_lost'") && deploymentRecovery.includes("'default', 1"), 'Deployment crash recovery does not safely requeue expired single-attempt operations.');
 assert(read('app/Queue/QueueWorker.php').includes('deploymentRecovery?->recover(3)'), 'The queue worker does not run deployment crash recovery.');
 assert(read('app/Queue/CleanupService.php').includes('protectedDeploymentPackages') && read('app/Queue/CleanupService.php').includes("d.status IN ('queued','validating'"), 'Cleanup can delete an active deployment package before recovery.');
+const deploymentEventSources = `${deploymentHandler}\n${deploymentRollback}\n${read('app/Deployment/RollbackJobHandler.php')}`;
+const deploymentEventKeys = new Set(['deployment.queued', ...[...deploymentEventSources.matchAll(/eventOnce\([^\n]+?'(deployment\.[a-z_]+)'/g)].map(match => match[1])]);
+for (const key of deploymentEventKeys) {
+  assert(Object.hasOwn(dictionaries.fa, key), `Missing Persian deployment-event translation: ${key}`);
+  assert(Object.hasOwn(dictionaries.en, key), `Missing English deployment-event translation: ${key}`);
+}
+for (const key of ['deployStepPackage', 'deployStepDestination', 'deployStepValidate', 'deployStepBackup', 'deployStepExtract', 'deployStepDeploy', 'deployStepHealth', 'deployStepComplete']) {
+  assert(Object.hasOwn(dictionaries.fa, key) && Object.hasOwn(dictionaries.en, key), `Deployment wizard step is not bilingual: ${key}`);
+}
+assert(appSource.includes('deploymentWizardMarkup(') && appSource.includes('pollDeployment(') && appSource.includes('result.current_versions') && appSource.includes('result.rollback_points'), 'Mini App Deployment Center is missing its real eight-step state timeline or release overview.');
+assert(!appSource.includes('escapeHtml(event.message_key)'), 'Mini App renders an untranslated deployment event key.');
+assert(read('public/miniapp/index.html').includes('/miniapp/deployment.css'), 'Deployment Center responsive styling is not loaded.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

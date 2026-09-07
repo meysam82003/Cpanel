@@ -30,6 +30,12 @@ const statusText = value => {
   const translated = t(key);
   return translated === key ? String(value ?? '') : translated;
 };
+const stageText = value => {
+  const normalized = String(value ?? '').replace(/[_-]+(.)/g, (_, character) => character.toUpperCase());
+  const key = `stage${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}`;
+  const translated = t(key);
+  return translated === key ? String(value ?? '') : translated;
+};
 
 class ManagerApp {
   constructor() {
@@ -657,9 +663,35 @@ class ManagerApp {
     if (!this.requireHost() || !this.requireCapability(['files', 'backup'], 'deployCenter')) return;
     this.loading('deployCenter');
     const result = await this.api.request(this.hostPath('/deployments'));
-    this.deployments = result.deployments || [];
-    const rows = this.deployments.map(item => `<article class="card"><div class="page-head"><div><h3>${escapeHtml(item.package_name)}</h3><span class="badge ${item.status === 'completed' ? 'ok' : ['failed', 'rollback_failed'].includes(item.status) ? 'error' : 'warning'}">${escapeHtml(statusText(item.status))}</span></div><small>#${Number(item.id)}</small></div><dl class="key-values"><dt>${escapeHtml(t('destination'))}</dt><dd>${escapeHtml(item.destination)}</dd><dt>${escapeHtml(t('healthUrl'))}</dt><dd>${escapeHtml(item.health_check_url || '—')}</dd><dt>${escapeHtml(t('lastCheck'))}</dt><dd>${escapeHtml(dateText(item.completed_at || item.created_at))}</dd></dl><div class="row-actions"><button class="button secondary small" data-action="deployment-details" data-id="${Number(item.id)}">${escapeHtml(t('timeline'))}</button>${item.backup_ref ? `<button class="button warning small" data-action="deployment-rollback" data-id="${Number(item.id)}">${escapeHtml(t('rollback'))}</button>` : ''}</div></article>`).join('');
-    this.content.innerHTML = `${this.pageHead('deployCenter', '', `<button class="button" data-action="deployment-package">＋ ${escapeHtml(t('startDeploy'))}</button>`)}<div class="notice danger beginner-copy"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningDeploy'))}</div><h2>${escapeHtml(t('recentDeployments'))}</h2>${rows ? `<div class="cards">${rows}</div>` : `<section class="empty-state card"><h2>${escapeHtml(t('noDeployments'))}</h2><p>${escapeHtml(t('warningDeploy'))}</p><button class="button" data-action="deployment-package">${escapeHtml(t('startDeploy'))}</button></section>`}`;
+    this.deploymentOverview = result;
+    this.deployments = Array.isArray(result.deployments) ? result.deployments : [];
+    const current = Array.isArray(result.current_versions) ? result.current_versions : this.deployments.filter(item => item.is_current);
+    const rollbackPoints = Array.isArray(result.rollback_points) ? result.rollback_points : this.deployments.filter(item => item.rollback_available);
+    const active = Array.isArray(result.active_deployments) ? result.active_deployments : this.deployments.filter(item => item.is_active);
+    const attention = Array.isArray(result.attention_required) ? result.attention_required : this.deployments.filter(item => item.requires_attention);
+    const section = (key, items, emptyKey, variant) => `<section class="deploy-section" aria-labelledby="deploy-${escapeAttr(key)}"><div class="section-heading"><h2 id="deploy-${escapeAttr(key)}">${escapeHtml(t(key))}</h2><span class="badge">${items.length}</span></div>${items.length ? `<div class="cards deploy-grid">${items.map(item => this.deploymentCard(item, variant)).join('')}</div>` : `<div class="card compact-empty"><p>${escapeHtml(t(emptyKey))}</p></div>`}</section>`;
+    const activeSection = active.length ? section('activeDeployments', active, 'noDeployments', 'active') : '';
+    const attentionSection = attention.length ? `<section class="deploy-section" aria-labelledby="deploy-attention"><div class="notice danger"><strong id="deploy-attention">${escapeHtml(t('needsAttention'))} · ${attention.length}</strong>${escapeHtml(t('deploymentAttention'))}</div><div class="cards deploy-grid">${attention.map(item => this.deploymentCard(item, 'attention')).join('')}</div></section>` : '';
+    const recent = this.deployments.length ? `<section class="deploy-section" aria-labelledby="deploy-recent"><div class="section-heading"><h2 id="deploy-recent">${escapeHtml(t('recentDeployments'))}</h2><span class="badge">${this.deployments.length}</span></div><div class="cards deploy-grid">${this.deployments.map(item => this.deploymentCard(item, 'recent')).join('')}</div></section>` : `<section class="empty-state card"><h2>${escapeHtml(t('noDeployments'))}</h2><p>${escapeHtml(t('warningDeploy'))}</p><button class="button" data-action="deployment-package">${escapeHtml(t('startDeploy'))}</button></section>`;
+    this.content.innerHTML = `${this.pageHead('deployCenter', '', `<button class="button" data-action="deployment-package">＋ ${escapeHtml(t('startDeploy'))}</button>`)}<div class="notice danger beginner-copy"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningDeploy'))}</div>${attentionSection}${activeSection}${section('currentVersions', current, 'noCurrentVersion', 'current')}${section('rollbackPoints', rollbackPoints, 'noRollbackPoints', 'rollback')}${recent}`;
+  }
+
+  deploymentBadgeClass(status) {
+    if (status === 'completed') return 'ok';
+    if (['failed', 'rollback_failed', 'reconciliation_required'].includes(status)) return 'error';
+    return 'warning';
+  }
+
+  rollbackKindText(kind) {
+    return t({directory: 'rollbackDirectory', archive: 'rollbackArchive', remove_destination: 'rollbackRemoveDestination'}[kind] || 'rollbackPoints');
+  }
+
+  deploymentCard(item, variant = 'recent') {
+    const when = item.rolled_back_at || item.completed_at || item.started_at || item.created_at;
+    const health = item.health_status !== null && item.health_status !== undefined ? `HTTP ${Number(item.health_status)}` : (item.health_check_url ? '—' : t('stepSkipped'));
+    const rollback = item.rollback_available ? `<button class="button warning small" data-action="deployment-rollback" data-id="${Number(item.id)}">${escapeHtml(t('rollback'))}</button>` : '';
+    const context = variant === 'current' ? `<span class="badge ok">${escapeHtml(t('currentRelease'))}</span>` : (variant === 'rollback' ? `<span class="badge">${escapeHtml(this.rollbackKindText(item.rollback_kind))}</span>` : '');
+    return `<article class="card release-card ${item.requires_attention ? 'requires-attention' : ''}"><div class="page-head"><div><h3>${escapeHtml(item.package_name || `${t('deploy')} #${Number(item.id)}`)}</h3><div class="badge-row"><span class="badge ${this.deploymentBadgeClass(item.status)}">${escapeHtml(statusText(item.status))}</span>${context}</div></div><small>#${Number(item.id)}</small></div><dl class="key-values"><dt>${escapeHtml(t('destination'))}</dt><dd dir="ltr">${escapeHtml(item.destination)}</dd><dt>${escapeHtml(t('healthStatus'))}</dt><dd>${escapeHtml(health)}</dd><dt>${escapeHtml(t('lastCheck'))}</dt><dd>${escapeHtml(dateText(when))}</dd>${variant === 'rollback' ? `<dt>${escapeHtml(t('rollbackPoints'))}</dt><dd>${escapeHtml(this.rollbackKindText(item.rollback_kind))}</dd>` : ''}</dl><div class="row-actions"><button class="button secondary small" data-action="deployment-details" data-id="${Number(item.id)}">${escapeHtml(t('timeline'))}</button>${rollback}</div></article>`;
   }
 
   async pageUsage() {
@@ -828,7 +860,7 @@ class ManagerApp {
     $('#dialog-actions').innerHTML = `<button type="button" class="button secondary" data-dialog-close>${escapeHtml(t('cancel'))}</button><button type="submit" class="button ${danger ? 'danger' : ''}">${escapeHtml(t(submitKey))}</button>`;
     this.dialogSubmit = submit;
     this.applyCapabilityPolicy(this.dialog);
-    this.dialog.showModal();
+    if (!this.dialog.open) this.dialog.showModal();
     setTimeout(() => $('input:not([type=hidden]),textarea,select', this.dialog)?.focus(), 30);
   }
 
@@ -837,15 +869,18 @@ class ManagerApp {
     $('#dialog-body').innerHTML = body;
     $('#dialog-actions').innerHTML = `<button type="button" class="button" data-dialog-close>${escapeHtml(t('close'))}</button>`;
     this.applyCapabilityPolicy(this.dialog);
-    this.dialogSubmit = null; this.dialog.showModal();
+    this.dialogSubmit = null;
+    if (!this.dialog.open) this.dialog.showModal();
   }
 
   closeDialog() { if (this.dialog.open) this.dialog.close(); this.dialogSubmit = null; }
 
-  async confirmOperation({warningKey, action, target, summary, perform, preview = {}}) {
-    this.openForm('confirm', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t(warningKey))}</div><pre class="code">${escapeHtml(summary)}</pre>`, 'confirm', async () => {
+  async confirmOperation({warningKey, action, target, summary, perform, preview = {}, details = '', closeOnSuccess = true}) {
+    this.openForm('confirm', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t(warningKey))}</div>${details}<pre class="code">${escapeHtml(summary)}</pre>`, 'confirm', async () => {
       const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId || null, action, target, preview}});
-      await perform(confirmation.nonce); this.closeDialog(); this.toast(t('success')); this.haptic('success');
+      const outcome = await perform(confirmation.nonce);
+      if (closeOnSuccess) this.closeDialog();
+      if (outcome !== false) { this.toast(t('success')); this.haptic('success'); }
     }, true);
   }
 
@@ -1096,9 +1131,167 @@ class ManagerApp {
   restoreBackup(id) { const item = this.backupItems.find(backup => Number(backup.id) === id); this.openForm('restore', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningBackupRestore'))}</div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(item?.target || '')}" required dir="ltr"></div>`, 'restore', async form => { const destination = form.elements.destination.value, target = `${id}:${destination}`; const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.restore', target, preview: {backup_id: id, destination}}}); await this.api.request(this.hostPath(`/backups/${id}/restore`), {method: 'POST', body: {destination, confirmation: confirmation.nonce}}); this.closeDialog(); await this.render(); }, true); }
   deleteBackup(id) { const item = this.backupItems.find(backup => Number(backup.id) === id); this.openForm('remove', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningFileDelete'))}</div><pre class="code">${escapeHtml(`${item?.type}: ${item?.target}`)}</pre><label class="check"><input name="delete_remote" type="checkbox">${escapeHtml(t('deleteRemoteArchive'))}</label>`, 'remove', async form => { const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.delete', target: String(id), preview: {delete_remote: form.elements.delete_remote.checked}}}); await this.api.request(this.hostPath(`/backups/${id}`), {method: 'DELETE', body: {delete_remote: form.elements.delete_remote.checked, confirmation: confirmation.nonce}}); this.closeDialog(); await this.render(); }, true); }
 
-  deploymentPackage() { this.openForm('startDeploy', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningDeploy'))}</div><div class="field"><label>${escapeHtml(t('package'))}</label><input name="file" type="file" accept=".zip,application/zip" required></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr((this.activeHost()?.root_path || '') + '/public_html')}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('healthUrl'))}</label><input name="health_url" type="url" value="${escapeAttr(this.activeHost()?.main_domain ? `https://${this.activeHost().main_domain}/` : '')}" pattern="https://.*" dir="ltr"></div><div id="job-progress"></div>`, 'validatePackage', async form => { const file = form.elements.file.files[0]; if (!file) return; const destination = form.elements.destination.value, healthUrl = form.elements.health_url.value || null, payload = new FormData(); payload.append('file', file, file.name); this.updateProgress(0, t('uploadProgress', {percent: 0})); const packageResult = await this.api.upload(this.hostPath('/deployment-packages'), payload, percent => this.updateProgress(percent, t('uploadProgress', {percent}))); this.closeDialog(); const target = `${packageResult.id}:${destination}`, metadata = packageResult.metadata || {}; await this.confirmOperation({warningKey: 'warningDeploy', action: 'deployment.run', target, summary: `${t('package')}: ${packageResult.name}\n${t('destination')}: ${destination}\n${t('filesCount')}: ${metadata.files ?? '—'}\n${t('compressedSize')}: ${bytes(metadata.compressed_bytes)}\n${t('uncompressedSize')}: ${bytes(metadata.uncompressed_bytes)}\n${t('backupState')}: ${t('on')}\n${t('healthState')}: ${healthUrl || t('off')}`, preview: {package: packageResult.name, destination, files: metadata.files, backup: true, health_check: Boolean(healthUrl)}, perform: async confirmation => { const deployment = await this.api.request(this.hostPath('/deployments'), {method: 'POST', body: {package_id: packageResult.id, destination, health_check_url: healthUrl, confirmation}}); $('#dialog-body').innerHTML = `<h3>${escapeHtml(t('timeline'))}</h3><div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`; $('#dialog-actions').innerHTML = ''; await this.pollJob(deployment.job_id, false); await this.deploymentDetails(deployment.deployment_id, true); }}); }); }
-  async deploymentDetails(id, replaceDialog = false) { const deployment = await this.api.request(this.hostPath(`/deployments/${id}`)); const timeline = `<div class="timeline">${(deployment.events || []).map(event => `<article class="timeline-item"><strong>${escapeHtml(event.stage)} · ${escapeHtml(event.status)}</strong><p>${escapeHtml(event.message_key)}</p><small>${escapeHtml(dateText(event.created_at))}</small></article>`).join('')}</div><pre class="code">${escapeHtml(formatJson({status: deployment.status, destination: deployment.destination, health_status: deployment.health_status, error_code: deployment.error_code, backup_ref: deployment.backup_ref}))}</pre>`; if (replaceDialog) { $('#dialog-title').textContent = t('timeline'); $('#dialog-body').innerHTML = timeline; $('#dialog-actions').innerHTML = `<button type="button" class="button" data-dialog-close>${escapeHtml(t('close'))}</button>`; } else this.openInfo('timeline', timeline); }
-  rollbackDeployment(id) { return this.confirmOperation({warningKey: 'warningRollback', action: 'deployment.rollback', target: String(id), summary: `${t('deploy')} #${id}`, preview: {deployment_id: id}, perform: async confirmation => { const result = await this.api.request(this.hostPath(`/deployments/${id}/rollback`), {method: 'POST', body: {confirmation}}); $('#dialog-body').innerHTML = `<div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`; $('#dialog-actions').innerHTML = ''; await this.pollJob(result.job_id, false); await this.render(); }}); }
+  deploymentEventMetadata(event) {
+    if (event?.metadata && typeof event.metadata === 'object' && !Array.isArray(event.metadata)) return event.metadata;
+    if (typeof event?.metadata_json !== 'string' || event.metadata_json === '') return {};
+    try { const parsed = JSON.parse(event.metadata_json); return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}; } catch { return {}; }
+  }
+
+  deploymentWizardMarkup(deployment = null, draft = {}) {
+    const events = Array.isArray(deployment?.events) ? deployment.events : [];
+    const latest = new Map();
+    for (const event of events) latest.set(String(event.stage || ''), event);
+    const eventState = stage => {
+      const event = latest.get(stage);
+      if (!event) return {state: 'pending', label: t('stepPending')};
+      const status = String(event.status || '');
+      const state = status === 'completed' ? 'completed' : status === 'skipped' ? 'skipped' : status === 'failed' ? 'failed' : ['running', 'queued'].includes(status) ? 'running' : 'pending';
+      return {state, label: statusText(status)};
+    };
+    const selected = Boolean(deployment || draft.package);
+    const destination = Boolean(deployment || draft.destination);
+    const validated = draft.validated ? {state: 'completed', label: statusText('validated')} : eventState('validate');
+    let complete = eventState('complete');
+    if (complete.state === 'pending' && deployment && ['failed', 'rolled_back', 'rollback_failed', 'reconciliation_required'].includes(String(deployment.status))) {
+      complete = {state: 'failed', label: statusText(deployment.status)};
+    }
+    const steps = [
+      ['deployStepPackage', selected ? {state: 'completed', label: t('stepSelected')} : {state: 'running', label: t('stepPending')}],
+      ['deployStepDestination', destination ? {state: 'completed', label: t('stepSelected')} : {state: selected ? 'running' : 'pending', label: t('stepPending')}],
+      ['deployStepValidate', validated],
+      ['deployStepBackup', eventState('backup')],
+      ['deployStepExtract', eventState('extract')],
+      ['deployStepDeploy', eventState('deploy')],
+      ['deployStepHealth', eventState('health')],
+      ['deployStepComplete', complete],
+    ];
+    return `<ol class="deploy-steps" aria-label="${escapeAttr(t('timeline'))}">${steps.map(([key, status], index) => `<li class="deploy-step ${escapeAttr(status.state)}" data-state="${escapeAttr(status.state)}" ${status.state === 'running' ? 'aria-current="step"' : ''}><span class="deploy-step-index">${index + 1}</span><span><strong>${escapeHtml(t(key))}</strong><small>${escapeHtml(status.label)}</small></span></li>`).join('')}</ol>`;
+  }
+
+  renderDeploymentDraftSteps(form) {
+    const root = $('#deployment-draft-steps', form);
+    if (!root) return;
+    root.innerHTML = this.deploymentWizardMarkup(null, {package: Boolean(form.elements.file.files[0]), destination: form.elements.destination.value.trim() !== ''});
+  }
+
+  deploymentDetailsMarkup(deployment, job = null) {
+    const events = Array.isArray(deployment.events) ? deployment.events : [];
+    const packageMetadata = deployment.package_metadata && typeof deployment.package_metadata === 'object' ? deployment.package_metadata : {};
+    const notices = [
+      deployment.status === 'rolled_back' ? `<div class="notice warning"><strong>${escapeHtml(statusText('rolled_back'))}</strong>${escapeHtml(t(deployment.rollback_job_id ? 'deploymentManualRollback' : 'deploymentSafeRollback'))}</div>` : '',
+      deployment.requires_attention ? `<div class="notice danger"><strong>${escapeHtml(t('needsAttention'))}</strong>${escapeHtml(t('deploymentAttention'))}</div>` : '',
+      deployment.status === 'failed' ? `<div class="notice danger"><strong>${escapeHtml(statusText('failed'))}</strong>${escapeHtml(t('deploymentFailureHelp'))}</div>` : '',
+    ].join('');
+    const jobProgress = job ? `<div id="job-progress">${this.progressHtml(Number(job.progress || 0), `${statusText(job.status)} · ${Number(job.progress || 0)}%`)}</div>` : '';
+    const eventRows = events.map(event => {
+      const messageKey = String(event.message_key || '');
+      const translated = t(messageKey);
+      const message = translated === messageKey ? `${stageText(event.stage)} · ${statusText(event.status)}` : translated;
+      const metadata = this.deploymentEventMetadata(event);
+      const details = Object.keys(metadata).length ? `<details class="advanced-only event-metadata"><summary>${escapeHtml(t('eventDetails'))}</summary><pre class="code">${escapeHtml(formatJson(metadata))}</pre></details>` : '';
+      return `<article class="timeline-item state-${escapeAttr(String(event.status || 'pending'))}"><div class="timeline-heading"><strong>${escapeHtml(stageText(event.stage))}</strong><span class="badge ${this.deploymentBadgeClass(String(event.status || ''))}">${escapeHtml(statusText(event.status))}</span></div><p>${escapeHtml(message)}</p><small>${escapeHtml(dateText(event.created_at))}</small>${details}</article>`;
+    }).join('');
+    const technical = {switch_state: deployment.switch_state, stage_path: deployment.stage_path, backup_ref: deployment.backup_ref, rollback_path: deployment.rollback_path, reconciliation: deployment.reconciliation || {}, recovery_attempts: Number(deployment.recovery_attempts || 0)};
+    const rollback = deployment.rollback_available ? `<button class="button warning" data-action="deployment-rollback" data-id="${Number(deployment.id)}">${escapeHtml(t('rollback'))}</button>` : '';
+    return `${notices}${jobProgress}<section class="deployment-summary card"><div class="page-head"><div><h3>${escapeHtml(deployment.package_name)}</h3><div class="badge-row"><span class="badge ${this.deploymentBadgeClass(deployment.status)}">${escapeHtml(statusText(deployment.status))}</span>${deployment.is_current ? `<span class="badge ok">${escapeHtml(t('currentRelease'))}</span>` : ''}</div></div><small>#${Number(deployment.id)}</small></div><dl class="key-values"><dt>${escapeHtml(t('destination'))}</dt><dd dir="ltr">${escapeHtml(deployment.destination)}</dd><dt>${escapeHtml(t('filesCount'))}</dt><dd>${Number(packageMetadata.files || 0) || '—'}</dd><dt>${escapeHtml(t('backupSize'))}</dt><dd>${deployment.backup_size ? escapeHtml(bytes(deployment.backup_size)) : '—'}</dd><dt>${escapeHtml(t('healthStatus'))}</dt><dd>${deployment.health_status !== null && deployment.health_status !== undefined ? `HTTP ${Number(deployment.health_status)}` : (deployment.health_check_url ? '—' : escapeHtml(t('stepSkipped')))}</dd><dt>${escapeHtml(t('createdAt'))}</dt><dd>${escapeHtml(dateText(deployment.created_at))}</dd><dt>${escapeHtml(t('completedAt'))}</dt><dd>${escapeHtml(dateText(deployment.completed_at || deployment.rolled_back_at))}</dd><dt>${escapeHtml(t('errorCode'))}</dt><dd dir="ltr">${escapeHtml(deployment.error_code || '—')}</dd></dl>${rollback}</section><div class="notice"><strong>${escapeHtml(t('timeline'))}</strong>${escapeHtml(t('deploymentLiveTracking'))}</div>${this.deploymentWizardMarkup(deployment)}<h3>${escapeHtml(t('timeline'))}</h3><div class="timeline">${eventRows || `<p class="muted">${escapeHtml(t('stepPending'))}</p>`}</div><details class="advanced-only"><summary>${escapeHtml(t('technicalDetails'))}</summary><pre class="code">${escapeHtml(formatJson(technical))}</pre></details>`;
+  }
+
+  renderDeploymentDialog(deployment, job = null) {
+    $('#dialog-title').textContent = `${t('timeline')} · #${Number(deployment.id)}`;
+    $('#dialog-body').innerHTML = this.deploymentDetailsMarkup(deployment, job);
+    $('#dialog-actions').innerHTML = `<button type="button" class="button" data-dialog-close>${escapeHtml(t('close'))}</button>`;
+    this.dialogSubmit = null;
+    this.applyCapabilityPolicy(this.dialog);
+  }
+
+  async pollDeployment(jobId, deploymentId, rollbackOperation = false) {
+    let job;
+    let deployment;
+    for (;;) {
+      [job, deployment] = await Promise.all([
+        this.api.request(`/api/v1/jobs/${jobId}`),
+        this.api.request(this.hostPath(`/deployments/${deploymentId}`)),
+      ]);
+      this.renderDeploymentDialog(deployment, job);
+      if (['completed', 'failed'].includes(job.status)) break;
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+    if (this.route === 'deploy') await this.pageDeploy();
+    if (job.status === 'failed' && deployment.status !== 'rolled_back') {
+      throw new ApiError({code: deployment.error_code || job.last_error_code || 'deployment_failed', message: t('deploymentFailureHelp'), help_slug: 'deploy.rollback'}, 422);
+    }
+    if (job.status === 'failed') {
+      this.toast(t('deploymentSafeRollback'));
+      this.haptic('selection');
+    } else {
+      this.toast(rollbackOperation ? t('deployment.rollback_completed') : t('success'));
+      this.haptic('success');
+    }
+    return deployment;
+  }
+
+  deploymentPackage() {
+    const root = this.activeHost()?.root_path || '';
+    this.openForm('startDeploy', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningDeploy'))}</div><div id="deployment-draft-steps">${this.deploymentWizardMarkup()}</div><div class="field"><label>${escapeHtml(t('package'))}</label><input name="file" type="file" accept=".zip,application/zip" required></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(`${root}/public_html`)}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('healthUrl'))}</label><input name="health_url" type="url" value="${escapeAttr(this.activeHost()?.main_domain ? `https://${this.activeHost().main_domain}/` : '')}" pattern="https://.*" dir="ltr"></div><div id="job-progress"></div>`, 'validatePackage', async form => {
+      const file = form.elements.file.files[0];
+      if (!file) return;
+      const destination = form.elements.destination.value.trim();
+      const healthUrl = form.elements.health_url.value.trim() || null;
+      const payload = new FormData();
+      payload.append('file', file, file.name);
+      this.updateProgress(0, t('uploadProgress', {percent: 0}));
+      const packageResult = await this.api.upload(this.hostPath('/deployment-packages'), payload, percent => this.updateProgress(percent, t('uploadProgress', {percent})));
+      this.closeDialog();
+      const target = `${packageResult.id}:${destination}`;
+      const metadata = packageResult.metadata || {};
+      await this.confirmOperation({
+        warningKey: 'warningDeploy',
+        action: 'deployment.run',
+        target,
+        summary: `${t('package')}: ${packageResult.name}\n${t('destination')}: ${destination}\n${t('filesCount')}: ${metadata.files ?? '—'}\n${t('compressedSize')}: ${bytes(metadata.compressed_bytes)}\n${t('uncompressedSize')}: ${bytes(metadata.uncompressed_bytes)}\n${t('backupState')}: ${t('on')}\n${t('healthState')}: ${healthUrl || t('off')}`,
+        preview: {package: packageResult.name, destination, files: metadata.files, backup: true, health_check: Boolean(healthUrl)},
+        details: this.deploymentWizardMarkup(null, {package: true, destination: true, validated: true}),
+        closeOnSuccess: false,
+        perform: async confirmation => {
+          this.dialogSubmit = null;
+          const deployment = await this.api.request(this.hostPath('/deployments'), {method: 'POST', body: {package_id: packageResult.id, destination, health_check_url: healthUrl, confirmation}});
+          $('#dialog-actions').innerHTML = '';
+          await this.pollDeployment(deployment.job_id, deployment.deployment_id, false);
+          return false;
+        },
+      });
+    });
+    const form = this.dialogForm;
+    form.elements.file.addEventListener('change', () => this.renderDeploymentDraftSteps(form));
+    form.elements.destination.addEventListener('input', () => this.renderDeploymentDraftSteps(form));
+    this.renderDeploymentDraftSteps(form);
+  }
+
+  async deploymentDetails(id, replaceDialog = false) {
+    const deployment = await this.api.request(this.hostPath(`/deployments/${id}`));
+    if (replaceDialog) this.renderDeploymentDialog(deployment);
+    else this.openInfo('timeline', this.deploymentDetailsMarkup(deployment));
+  }
+
+  rollbackDeployment(id) {
+    const deployment = this.deployments.find(item => Number(item.id) === id);
+    const summary = `${t('deploy')} #${id}\n${t('package')}: ${deployment?.package_name || '—'}\n${t('destination')}: ${deployment?.destination || '—'}\n${t('rollbackPoints')}: ${this.rollbackKindText(deployment?.rollback_kind)}`;
+    return this.confirmOperation({
+      warningKey: 'warningRollback',
+      action: 'deployment.rollback',
+      target: String(id),
+      summary,
+      preview: {deployment_id: id, destination: deployment?.destination || null, rollback_kind: deployment?.rollback_kind || null},
+      closeOnSuccess: false,
+      perform: async confirmation => {
+        this.dialogSubmit = null;
+        const result = await this.api.request(this.hostPath(`/deployments/${id}/rollback`), {method: 'POST', body: {confirmation}});
+        $('#dialog-actions').innerHTML = '';
+        await this.pollDeployment(result.job_id, id, true);
+        return false;
+      },
+    });
+  }
 
   customLog() { this.openForm('logs', `<div class="field"><label>${escapeHtml(t('path'))}</label><input name="path" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('tailLines'))}</label><select name="lines"><option>50</option><option selected>100</option></select></div><div class="field"><label>${escapeHtml(t('search'))}</label><input name="q"></div>`, 'open', async form => { const path = form.elements.path.value, lines = form.elements.lines.value, q = form.elements.q.value; this.closeDialog(); await this.openLog(path, lines, q); }); }
   async openLog(path, lines = 100, q = '') { const result = await this.api.request(query(this.hostPath('/logs/tail'), {path, lines, q})); const output = $('#log-output'); const html = `<article class="card"><h2>${escapeHtml(result.path)}</h2>${result.truncated ? `<div class="notice warning">${escapeHtml(t('warning'))}: ${escapeHtml(t('maxSafeLogReached'))}</div>` : ''}<pre class="code">${escapeHtml((result.lines || []).join('\n'))}</pre></article>`; if (output) { output.innerHTML = html; output.scrollIntoView({behavior: 'smooth'}); } else this.openInfo('logs', html); }
