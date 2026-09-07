@@ -44,7 +44,7 @@ final class Response
         }
         $safeName = preg_replace('/[^A-Za-z0-9._-]/', '_', basename($filename)) ?: 'download.bin';
         $contentType = strtolower(trim(preg_replace('/[\r\n]/', '', $contentType) ?? ''));
-        if (!preg_match('#^[a-z0-9!#$&^_.+\-]+/[a-z0-9!#$&^_.+\-]+(?:\s*;\s*charset=[a-z0-9._\-]+)?$#i', $contentType)) {
+        if (!preg_match('#^[a-z0-9!\#$&^_.+\-]+/[a-z0-9!\#$&^_.+\-]+(?:\s*;\s*charset=[a-z0-9._\-]+)?$#i', $contentType)) {
             $contentType = 'application/octet-stream';
         }
         return new self('', 200, [

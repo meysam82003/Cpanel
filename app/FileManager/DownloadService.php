@@ -197,9 +197,9 @@ final class DownloadService
     private function safeContentType(mixed $candidate, string $path): string
     {
         $contentType = strtolower(trim(explode(';', is_string($candidate) ? $candidate : '')[0]));
-        if (!preg_match('#^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$#', $contentType)) {
+        if (!preg_match('#^[a-z0-9!\#$&^_.+-]+/[a-z0-9!\#$&^_.+-]+$#', $contentType)) {
             $detected = (new \finfo(FILEINFO_MIME_TYPE))->file($path);
-            $contentType = is_string($detected) && preg_match('#^[a-z0-9!#$&^_.+-]+/[a-z0-9!#$&^_.+-]+$#', strtolower($detected)) ? strtolower($detected) : 'application/octet-stream';
+            $contentType = is_string($detected) && preg_match('#^[a-z0-9!\#$&^_.+-]+/[a-z0-9!\#$&^_.+-]+$#', strtolower($detected)) ? strtolower($detected) : 'application/octet-stream';
         }
         return mb_substr($contentType, 0, 191);
     }

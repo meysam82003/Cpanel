@@ -18,7 +18,7 @@ final class CleanupServiceTest extends TestCase
 CREATE TABLE temporary_connections (expires_at TEXT); CREATE TABLE callback_states (expires_at TEXT);
 CREATE TABLE confirmation_nonces (expires_at TEXT); CREATE TABLE miniapp_sessions (expires_at TEXT);
 CREATE TABLE user_sessions (expires_at TEXT); CREATE TABLE replay_nonces (expires_at TEXT);
-CREATE TABLE rate_limits (expires_at TEXT); CREATE TABLE download_tokens (expires_at TEXT);
+CREATE TABLE rate_limits (expires_at TEXT); CREATE TABLE download_tokens (expires_at TEXT, prepared_path TEXT NULL);
 CREATE TABLE operation_locks (expires_at TEXT);
 CREATE TABLE deployment_packages (id INTEGER PRIMARY KEY, local_path TEXT, expires_at TEXT, consumed_at TEXT NULL);
 CREATE TABLE deployments (id INTEGER PRIMARY KEY, package_id INTEGER NULL, status TEXT NOT NULL);
