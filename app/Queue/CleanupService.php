@@ -41,9 +41,17 @@ final class CleanupService
         $auditDays = $this->setting('audit_retention_days', 365, 30, 3650);
         $counts['audit_logs'] = $this->database->execute('DELETE FROM audit_logs WHERE created_at < ?', [$this->beforeDays($auditDays)])->rowCount();
         $counts['recent_actions'] = $this->database->execute('DELETE FROM recent_actions WHERE created_at < ?', [$this->beforeDays(90)])->rowCount();
+        $protectedDeploymentPackages = [];
+        foreach ($this->database->all("SELECT DISTINCT p.local_path FROM deployment_packages p JOIN deployments d ON d.package_id = p.id WHERE d.status IN ('queued','validating','validated','backup_started','backup_completed','upload_started','upload_completed','extract_started','extract_completed','deploying','health_check','rolling_back','reconciliation_required')") as $package) {
+            $real = realpath((string) $package['local_path']);
+            if ($real !== false) {
+                $protectedDeploymentPackages[$real] = true;
+            }
+        }
         $threshold = time() - 86400;
         foreach (glob(rtrim($this->storageRoot, '/') . '/temp/*') ?: [] as $path) {
-            if (is_file($path) && filemtime($path) !== false && filemtime($path) < $threshold) {
+            $real = realpath($path);
+            if ($real !== false && !isset($protectedDeploymentPackages[$real]) && !is_link($path) && is_file($real) && filemtime($real) !== false && filemtime($real) < $threshold) {
                 @unlink($path);
                 $counts['temp_files'] = ($counts['temp_files'] ?? 0) + 1;
             }

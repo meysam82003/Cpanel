@@ -26,9 +26,13 @@ use App\Database\SqlExportJobHandler;
 use App\Database\SqlImportJobHandler;
 use App\Database\SqlSafetyAnalyzer;
 use App\Database\SqlTransferService;
+use App\Deployment\CpanelDeploymentFilesystem;
+use App\Deployment\DeploymentBackupVerifier;
+use App\Deployment\DeploymentFilesystem;
 use App\Deployment\DeploymentJobHandler;
 use App\Deployment\DeploymentRollbackExecutor;
 use App\Deployment\DeploymentPackageService;
+use App\Deployment\DeploymentRecoveryService;
 use App\Deployment\DeploymentService;
 use App\Deployment\HealthCheckService;
 use App\Deployment\RollbackJobHandler;
@@ -129,7 +133,10 @@ final class Container
             OperationLockService::class => new OperationLockService($this->get(Database::class)),
             ZipPackageValidator::class => new ZipPackageValidator($this->get(ArchiveSafetyValidator::class)),
             HealthCheckService::class => new HealthCheckService(new HostValidator(false, [443], 443)),
-            DeploymentRollbackExecutor::class => new DeploymentRollbackExecutor($this->get(FileManagerService::class)),
+            DeploymentFilesystem::class => new CpanelDeploymentFilesystem($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(PathGuard::class)),
+            DeploymentBackupVerifier::class => new DeploymentBackupVerifier($this->get(DeploymentFilesystem::class), $this->get(ZipPackageValidator::class), $this->root . '/storage/temp', Env::int('MAX_DEPLOY_BACKUP_VERIFY_BYTES', 1_073_741_824)),
+            DeploymentRollbackExecutor::class => new DeploymentRollbackExecutor($this->get(DeploymentFilesystem::class), $this->get(DeploymentBackupVerifier::class)),
+            DeploymentRecoveryService::class => new DeploymentRecoveryService($this->get(Database::class), $this->get(QueueService::class), $this->get(AuditLogger::class), $this->root . '/storage/temp'),
             DeploymentPackageService::class => new DeploymentPackageService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(ZipPackageValidator::class)),
             DeploymentService::class => new DeploymentService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PathGuard::class), $this->get(ZipPackageValidator::class), $this->get(QueueService::class), $this->get(AuditLogger::class), $this->root . '/storage/temp'),
             ConfirmationService::class => new ConfirmationService($this->get(Database::class)),
@@ -149,7 +156,7 @@ final class Container
             ErrorGuidanceService::class => new ErrorGuidanceService(),
             BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), rtrim((string) Config::app('url'), '/') . '/miniapp/', $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(TelegramUploadService::class)),
             CleanupService::class => new CleanupService($this->get(Database::class), $this->root . '/storage'),
-            QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class)),
+            QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class), $this->get(DeploymentRecoveryService::class)),
             default => throw new AppException('Service is not registered: ' . $id, 500, 'service_not_registered'),
         };
         $this->instances[$id] = $service;
@@ -166,7 +173,7 @@ final class Container
             'telegram.file_upload' => new TelegramFileUploadJobHandler($this->get(Database::class), $this->get(TelegramUploadService::class), $this->get(FileManagerService::class), $this->get(PlanGuard::class), $this->get(TelegramClient::class), $this->get(AuditLogger::class), $this->root . '/storage/temp'),
             'file.archive_create' => new ArchiveCreateJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class)),
             'file.archive_extract' => new ArchiveExtractJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(ArchiveSafetyValidator::class), $this->root . '/storage/temp', Env::int('MAX_ARCHIVE_INSPECTION_BYTES', 268_435_456), Env::int('MAX_ARCHIVE_EXPANDED_BYTES', 1_073_741_824), Env::int('MAX_ARCHIVE_FILES', 10_000), Env::int('MAX_ARCHIVE_EXPANSION_RATIO', 200), Env::int('MAX_ARCHIVE_TOP_LEVEL_ENTRIES', 500)),
-            'deployment.run' => new DeploymentJobHandler($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(HealthCheckService::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
+            'deployment.run' => new DeploymentJobHandler($this->get(Database::class), $this->get(AccountRepository::class), $this->get(DeploymentFilesystem::class), $this->get(ZipPackageValidator::class), $this->get(DeploymentBackupVerifier::class), $this->get(HealthCheckService::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(PathGuard::class), $this->get(AuditLogger::class), $this->root . '/storage/temp', $this->root . '/storage/temp'),
             'deployment.rollback' => new RollbackJobHandler($this->get(Database::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
             'admin.broadcast' => new BroadcastJobHandler($this->get(Database::class), $this->get(QueueService::class), $this->get(TelegramClient::class)),
         ];

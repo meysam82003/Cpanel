@@ -79,6 +79,7 @@ final class FileManagerService
         $this->paths->assertWithinRoot($canonical, $root);
         unset($info['uid'], $info['gid']);
         $info['path'] = $canonical;
+        $info['is_symlink'] = in_array(strtolower((string) ($info['type'] ?? '')), ['link', 'symlink'], true);
         return $info;
     }
 
@@ -181,6 +182,43 @@ final class FileManagerService
         }
         $this->audit->record($userId, $accountId, 'file.move', 'success', 'path', $safeSource, ['destination' => $safeDestination, 'provider_api' => $providerApi]);
         return ['source' => $safeSource, 'destination' => $safeDestination, 'provider_api' => $providerApi, 'cpanel' => $result['data']];
+    }
+
+    /**
+     * Renames a directory as one provider operation. Deployment uses this only
+     * after it has verified that the destination path does not exist.
+     *
+     * @return array<string,mixed>
+     */
+    public function renameDirectoryAtomically(int $userId, int $accountId, string $source, string $destination): array
+    {
+        [, $connection, $root, $safeSource] = $this->context($userId, $accountId, $source);
+        [, , , $safeDestination] = $this->context($userId, $accountId, $destination);
+        $sourceInfo = $this->info($userId, $accountId, $safeSource);
+        $type = strtolower((string) ($sourceInfo['type'] ?? ''));
+        if (!in_array($type, ['dir', 'directory'], true) || (bool) ($sourceInfo['is_symlink'] ?? false)) {
+            throw new AppException('Atomic deployment switching requires a regular directory source.', 422, 'deployment_source_not_directory', [], 'deployment.rollback');
+        }
+        try {
+            $this->info($userId, $accountId, $safeDestination);
+            throw new AppException('Atomic deployment switching requires an unused destination path.', 409, 'deployment_switch_collision', [], 'deployment.rollback');
+        } catch (AppException $exception) {
+            if ($exception->safeCode !== 'remote_path_not_found') {
+                throw $exception;
+            }
+        }
+        $parent = $this->info($userId, $accountId, dirname($safeDestination));
+        if (!in_array(strtolower((string) ($parent['type'] ?? '')), ['dir', 'directory'], true) || (bool) ($parent['is_symlink'] ?? false)) {
+            throw new AppException('Atomic deployment destination parent is not a regular directory.', 422, 'deployment_parent_not_directory', [], 'deployment.rollback');
+        }
+        $result = $this->cpanel->callLegacyApi2($connection, 'Fileman', 'fileop', [
+            'op' => 'rename',
+            'sourcefiles' => $this->archiveApiPath($safeSource, $root),
+            'destfiles' => $this->archiveApiPath($safeDestination, $root),
+            'doubledecode' => 0,
+        ], false);
+        $this->audit->record($userId, $accountId, 'directory.atomic_rename', 'success', 'directory', $safeSource, ['destination' => $safeDestination, 'provider_api' => 'api2_no_uapi_equivalent']);
+        return ['source' => $safeSource, 'destination' => $safeDestination, 'provider_api' => 'api2_no_uapi_equivalent', 'cpanel' => $result['data']];
     }
 
     /** @return array<string,mixed> */

@@ -101,7 +101,7 @@ assert(archiveExtract.includes('downloadTo(') && archiveExtract.includes('->vali
 assert(archiveExtract.includes("hash_equals((string) $summary['sha256'], (string) $stagedDownload['sha256'])") && archiveExtract.includes('archive_reconciliation_required'), 'Archive staging integrity or ambiguous-outcome reconciliation is missing.');
 assert(archiveExtract.includes('@unlink($temporary)') && archiveExtract.includes('@unlink($verificationTemporary)'), 'Archive inspection temporary files are not cleaned.');
 
-for (const column of ['package_id', 'queue_job_id', 'rollback_job_id', 'package_checksum', 'package_metadata_json', 'stage_path', 'switch_state', 'backup_size', 'reconciliation_json', 'notification_id', 'rollback_verified_at']) {
+for (const column of ['package_id', 'queue_job_id', 'rollback_job_id', 'package_checksum', 'package_metadata_json', 'stage_path', 'switch_state', 'backup_size', 'backup_checksum', 'reconciliation_json', 'notification_id', 'rollback_notification_id', 'recovery_attempts', 'last_recovery_at', 'rollback_verified_at']) {
   assert(schema.includes(`ADD COLUMN ${column}`), `Deployment state schema is missing ${column}.`);
 }
 const deploymentService = read('app/Deployment/DeploymentService.php');
@@ -112,6 +112,18 @@ assert(deploymentService.includes('SELECT * FROM deployment_packages WHERE id = 
 assert(deploymentService.includes("'default',\n                1,") && deploymentService.includes('rollback_job_id = ?'), 'Deployment and rollback jobs are not persisted as single-attempt operations.');
 assert(deploymentService.includes('deployment_reserved_path') && deploymentService.includes('invalid_health_check_url'), 'Deployment destination or health-check input policy is missing.');
 assert(deploymentPackages.includes("'name' => $name") && deploymentPackages.includes("'metadata' => $metadata") && deploymentPackages.includes('is_link($path)'), 'Deployment upload response contract or symlink protection is incomplete.');
+const deploymentHandler = read('app/Deployment/DeploymentJobHandler.php');
+const deploymentRollback = read('app/Deployment/DeploymentRollbackExecutor.php');
+const deploymentRecovery = read('app/Deployment/DeploymentRecoveryService.php');
+const deploymentBackupVerifier = read('app/Deployment/DeploymentBackupVerifier.php');
+const deploymentFilesystem = read('app/FileManager/FileManagerService.php');
+assert(deploymentFilesystem.includes('renameDirectoryAtomically(') && deploymentFilesystem.includes("'op' => 'rename'") && deploymentFilesystem.includes("'api2_no_uapi_equivalent'"), 'Atomic same-account directory switching is not connected to the documented cPanel compatibility operation.');
+assert(deploymentBackupVerifier.includes('->download(') && deploymentBackupVerifier.includes('->validate(') && deploymentBackupVerifier.includes("['size' => $size, 'sha256' => $checksum"), 'Deployment backups are not streamed, checksum-bound, and structurally verified before use.');
+assert(deploymentHandler.includes('validatedPackageContract(') && deploymentHandler.includes('requiresLocalPackage(') && deploymentHandler.includes("'health_check'"), 'Late deployment recovery is still incorrectly dependent on the local upload package.');
+assert(deploymentHandler.includes('rollbackCheckpoint(') && deploymentRollback.includes("'rollback_dir'") && deploymentRollback.includes("'_restore_pending'") && deploymentRollback.includes('rollback_archive_extract_pending') && deploymentRollback.includes('rollback_remove_pending'), 'Deployment rollback does not persist all destructive filesystem checkpoints.');
+assert(deploymentRecovery.includes("'queue_lease_expired', 'queue_lease_lost', 'operation_locked', 'operation_lock_lost'") && deploymentRecovery.includes("'default', 1"), 'Deployment crash recovery does not safely requeue expired single-attempt operations.');
+assert(read('app/Queue/QueueWorker.php').includes('deploymentRecovery?->recover(3)'), 'The queue worker does not run deployment crash recovery.');
+assert(read('app/Queue/CleanupService.php').includes('protectedDeploymentPackages') && read('app/Queue/CleanupService.php').includes("d.status IN ('queued','validating'"), 'Cleanup can delete an active deployment package before recovery.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

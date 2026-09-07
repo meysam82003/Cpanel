@@ -6,16 +6,24 @@ namespace App\Queue;
 
 use App\Core\AppException;
 use App\Core\Logger;
+use App\Deployment\DeploymentRecoveryService;
 
 final class QueueWorker
 {
     /** @param array<string,JobHandler> $handlers */
-    public function __construct(private readonly QueueService $queue, private readonly array $handlers, private readonly Logger $logger)
-    {
+    public function __construct(
+        private readonly QueueService $queue,
+        private readonly array $handlers,
+        private readonly Logger $logger,
+        private readonly ?DeploymentRecoveryService $deploymentRecovery = null,
+    ) {
     }
 
     public function runOnce(string $queueName = 'default'): bool
     {
+        if ($queueName === 'default') {
+            $this->deploymentRecovery?->recover(3);
+        }
         $job = $this->queue->claim($queueName);
         if ($job === null) {
             return false;
@@ -45,4 +53,3 @@ final class QueueWorker
         return $processed;
     }
 }
-

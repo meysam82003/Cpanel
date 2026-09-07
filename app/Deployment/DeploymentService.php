@@ -67,7 +67,7 @@ final class DeploymentService
             ], 'deployment:' . $deploymentId . ':' . $currentChecksum, 'default', 1);
             $database->execute('UPDATE deployments SET queue_job_id = ? WHERE id = ? AND user_id = ? AND account_id = ?', [$jobId, $deploymentId, $userId, $accountId]);
             $database->execute('UPDATE deployment_packages SET consumed_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND account_id = ? AND consumed_at IS NULL', [$packageId, $userId, $accountId]);
-            $database->execute('INSERT INTO deployment_events (deployment_id, stage, status, message_key, metadata_json) VALUES (?, \'validate\', \'completed\', \'deployment.validated\', ?)', [$deploymentId, json_encode($metadata, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]);
+            $database->execute('INSERT INTO deployment_events (deployment_id, stage, status, message_key, metadata_json) VALUES (?, \'queue\', \'queued\', \'deployment.queued\', ?)', [$deploymentId, json_encode(['package_id' => $packageId, 'sha256' => $currentChecksum], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]);
             $this->audit->record($userId, $accountId, 'deployment.queue', 'success', 'deployment', (string) $deploymentId, $preview + ['job_id' => $jobId, 'package_id' => $packageId]);
             return [$deploymentId, $jobId];
         });
@@ -114,7 +114,7 @@ final class DeploymentService
     public function list(int $userId, int $accountId): array
     {
         $this->accounts->getOwned($userId, $accountId);
-        return $this->database->all('SELECT id, package_id, queue_job_id, rollback_job_id, package_name, package_checksum, destination, stage_path, switch_state, status, backup_enabled, backup_ref, backup_size, rollback_path, destination_existed, health_check_url, health_status, error_code, reconciliation_json, started_at, completed_at, rolled_back_at, rollback_verified_at, created_at FROM deployments WHERE user_id = ? AND account_id = ? ORDER BY id DESC LIMIT 100', [$userId, $accountId]);
+        return $this->database->all('SELECT id, package_id, queue_job_id, rollback_job_id, package_name, package_checksum, destination, stage_path, switch_state, status, backup_enabled, backup_ref, backup_size, backup_checksum, rollback_path, destination_existed, health_check_url, health_status, error_code, reconciliation_json, recovery_attempts, last_recovery_at, started_at, completed_at, rolled_back_at, rollback_verified_at, created_at FROM deployments WHERE user_id = ? AND account_id = ? ORDER BY id DESC LIMIT 100', [$userId, $accountId]);
     }
 
     /** @return array<string,mixed> */

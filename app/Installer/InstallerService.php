@@ -146,6 +146,7 @@ final class InstallerService
             'TELEGRAM_SEND_MAX_BYTES' => '50000000',
             'MAX_ARCHIVE_INSPECTION_BYTES' => '268435456',
             'MAX_ARCHIVE_EXPANDED_BYTES' => '1073741824',
+            'MAX_DEPLOY_BACKUP_VERIFY_BYTES' => '1073741824',
             'MAX_ARCHIVE_FILES' => '10000',
             'MAX_ARCHIVE_EXPANSION_RATIO' => '200',
             'MAX_ARCHIVE_TOP_LEVEL_ENTRIES' => '500',

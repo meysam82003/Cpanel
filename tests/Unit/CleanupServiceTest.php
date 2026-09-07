@@ -21,6 +21,7 @@ CREATE TABLE user_sessions (expires_at TEXT); CREATE TABLE replay_nonces (expire
 CREATE TABLE rate_limits (expires_at TEXT); CREATE TABLE download_tokens (expires_at TEXT);
 CREATE TABLE operation_locks (expires_at TEXT);
 CREATE TABLE deployment_packages (id INTEGER PRIMARY KEY, local_path TEXT, expires_at TEXT, consumed_at TEXT NULL);
+CREATE TABLE deployments (id INTEGER PRIMARY KEY, package_id INTEGER NULL, status TEXT NOT NULL);
 CREATE TABLE telegram_updates (processed_at TEXT NULL, received_at TEXT); CREATE TABLE api_request_metrics (created_at TEXT);
 CREATE TABLE queue_jobs (status TEXT, completed_at TEXT NULL); CREATE TABLE audit_logs (created_at TEXT);
 CREATE TABLE recent_actions (created_at TEXT); CREATE TABLE settings (setting_key TEXT PRIMARY KEY, setting_value TEXT);
@@ -35,6 +36,8 @@ SQL);
         file_put_contents($pendingPath, 'pending');
         file_put_contents($consumedPath, 'consumed');
         $database->execute("INSERT INTO deployment_packages (id, local_path, expires_at, consumed_at) VALUES (1, ?, '2000-01-01 00:00:00', NULL), (2, ?, '2000-01-01 00:00:00', CURRENT_TIMESTAMP)", [$pendingPath, $consumedPath]);
+        $database->execute("INSERT INTO deployments (id, package_id, status) VALUES (1, 2, 'upload_started')");
+        touch($consumedPath, time() - 172800);
 
         try {
             $counts = (new CleanupService($database, $root))->run();

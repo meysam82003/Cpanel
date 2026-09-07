@@ -136,7 +136,7 @@ SQL);
             'package_sha256' => $registered['metadata']['sha256'],
             'package_metadata' => $registered['metadata'],
         ], $this->queue->payload($job));
-        self::assertSame(1, (int) $this->database->one("SELECT COUNT(*) AS total FROM deployment_events WHERE stage = 'validate' AND status = 'completed'")['total']);
+        self::assertSame(1, (int) $this->database->one("SELECT COUNT(*) AS total FROM deployment_events WHERE stage = 'queue' AND status = 'queued' AND message_key = 'deployment.queued'")['total']);
         self::assertSame(1, (int) $this->database->one("SELECT COUNT(*) AS total FROM audit_logs WHERE action = 'deployment.queue'")['total']);
         $this->assertSafeCode('deployment_package_unavailable', fn () => $this->deployments->deployPackage(1, 10, $registered['id'], 'public_html/again', null));
     }
