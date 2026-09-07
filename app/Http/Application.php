@@ -75,7 +75,7 @@ final class Application
             return $this->webhook($request, $match[1]);
         }
 
-        if (($request->method === 'GET' || $request->method === 'HEAD') && preg_match('#^/download/([A-Za-z0-9_-]{40,64})$#', $request->path, $match)) {
+        if ($request->method === 'GET' && preg_match('#^/download/([A-Za-z0-9_-]{40,64})$#', $request->path, $match)) {
             $this->container->get(RateLimiter::class)->hit('download.public', $request->ip ?? 'unknown', 20, 60);
             $file = $this->container->get(DownloadService::class)->materialize($match[1]);
             return Response::download($file['path'], $file['filename'], $file['content_type'], $file['cleanup']);

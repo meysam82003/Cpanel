@@ -16,6 +16,13 @@ final class CleanupService
     public function run(): array
     {
         $counts = [];
+        $expiredDownloads = $this->database->all('SELECT prepared_path FROM download_tokens WHERE expires_at < CURRENT_TIMESTAMP AND prepared_path IS NOT NULL');
+        foreach ($expiredDownloads as $download) {
+            $path = (string) $download['prepared_path'];
+            if ($this->insideStorage($path) && is_file($path) && @unlink($path)) {
+                $counts['download_files'] = ($counts['download_files'] ?? 0) + 1;
+            }
+        }
         foreach (['temporary_connections', 'callback_states', 'confirmation_nonces', 'miniapp_sessions', 'user_sessions', 'replay_nonces', 'rate_limits', 'download_tokens', 'operation_locks'] as $table) {
             $statement = $this->database->execute("DELETE FROM {$table} WHERE expires_at < CURRENT_TIMESTAMP");
             $counts[$table] = $statement->rowCount();

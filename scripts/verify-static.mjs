@@ -69,12 +69,16 @@ assert(migrationRunner.includes('GET_LOCK') && migrationRunner.includes('RELEASE
 assert(migrationRunner.includes("$this->driver === 'mysql'") && migrationRunner.includes('implicitly commit DDL'), 'MySQL DDL transaction semantics are not handled explicitly.');
 assert(!/ALTER\s+TABLE\s+[^;]+ADD\s+COLUMN[^;]+,\s*ADD\s+COLUMN/is.test(schema), 'A migration contains multiple ADD COLUMN operations in one non-resumable statement.');
 assert(schema.includes('reservation_token CHAR(64)'), 'Queue jobs do not persist an owner-bound lease token.');
+for (const column of ['prepared_path', 'prepared_sha256', 'prepared_at', 'preparation_token']) assert(schema.includes(`ADD COLUMN ${column}`), `Prepared download schema is missing ${column}.`);
 
 const queueSource = read('app/Queue/QueueService.php');
 assert(queueSource.includes('QUEUE_STALE_AFTER_SECONDS') || read('app/Core/Container.php').includes("Env::int('QUEUE_STALE_AFTER_SECONDS'"), 'Queue lease duration is not configurable.');
 assert(queueSource.includes('reserved_at = CURRENT_TIMESTAMP') && queueSource.includes('reservation_token = ?'), 'Queue progress does not renew an owner-bound lease.');
 assert(!queueSource.includes('DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 20 MINUTE)'), 'Queue recovery still uses the old hard-coded MySQL lease timeout.');
 assert(read('app/Queue/CleanupService.php').includes("'user_sessions'"), 'Expired bot sessions are not cleaned up.');
+assert(read('app/Core/Container.php').includes("'file.download' => new FileDownloadJobHandler"), 'Prepared downloads are not connected to the queue worker.');
+assert(read('app/FileManager/DownloadService.php').includes("status = 'ready'") && read('app/FileManager/DownloadService.php').includes('download_integrity_failed'), 'Secure downloads are not prepared and integrity-checked before serving.');
+assert(read('app/FileManager/FileDownloadJobHandler.php').includes("'sendDocument'") && read('app/FileManager/FileDownloadJobHandler.php').includes("'secure_link'"), 'Queued downloads do not provide real Telegram and secure-link delivery paths.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

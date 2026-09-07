@@ -25,4 +25,9 @@ final class JobContext
     {
         return $this->job['account_id'] === null ? null : (int) $this->job['account_id'];
     }
+
+    public function leaseToken(): string
+    {
+        return (string) $this->job['reservation_token'];
+    }
 }

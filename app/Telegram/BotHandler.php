@@ -42,7 +42,6 @@ final class BotHandler
         private readonly DownloadService $downloads,
         private readonly PlanGuard $plans,
         private readonly string $tempRoot,
-        private readonly int $telegramSendMaxBytes = 50_000_000,
     ) {
     }
 
@@ -446,41 +445,9 @@ final class BotHandler
             throw new AppException('Select a file, not a directory. Use the Mini App to create an archive first.', 422, 'download_directory_not_supported', [], 'files.download');
         }
         $safePath = (string) $info['path'];
-        $size = (int) ($info['size'] ?? 0);
-        if ($size > $this->telegramSendMaxBytes) {
-            $this->sendSecureDownloadLink($userId, $accountId, $chatId, $language, $safePath);
-            $this->sessions->cancel($userId);
-            return;
-        }
-        $issued = $this->downloads->issue($userId, $accountId, $safePath);
-        $local = $this->downloads->materialize($issued['token'], $userId);
-        try {
-            if ($local['bytes'] > $this->telegramSendMaxBytes) {
-                $this->sendSecureDownloadLink($userId, $accountId, $chatId, $language, $safePath);
-            } else {
-                $this->telegram->call('sendChatAction', ['chat_id' => $chatId, 'action' => 'upload_document']);
-                $this->telegram->call('sendDocument', [
-                    'chat_id' => $chatId,
-                    'document' => new \CURLFile($local['path'], $local['content_type'], $local['filename']),
-                    'caption' => $this->translator->get('files.download_complete', $language),
-                ]);
-            }
-            $this->sessions->cancel($userId);
-        } finally {
-            if ($local['cleanup'] && is_file($local['path'])) {
-                @unlink($local['path']);
-            }
-        }
-    }
-
-    private function sendSecureDownloadLink(int $userId, int $accountId, int $chatId, string $language, string $safePath): void
-    {
-        $issued = $this->downloads->issue($userId, $accountId, $safePath, 300);
-        $base = preg_replace('#/miniapp/?$#', '', $this->miniAppUrl) ?: rtrim($this->miniAppUrl, '/');
-        $url = rtrim($base, '/') . '/download/' . rawurlencode($issued['token']);
-        $this->send($chatId, $this->translator->get('files.download_large', $language) . "\n" . $url, [[
-            ['text' => $this->translator->get('section.files', $language), 'web_app' => ['url' => $this->panelUrl('files', $accountId)]],
-        ]]);
+        $issued = $this->downloads->issue($userId, $accountId, $safePath, 900, $chatId, $language);
+        $this->sessions->cancel($userId);
+        $this->send($chatId, $this->translator->get('files.download_queued', $language, ['job' => $issued['job_id']]), $this->hostKeyboard($userId, $language, $accountId));
     }
 
     /** @param array<string,mixed> $user */

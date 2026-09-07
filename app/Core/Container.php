@@ -36,6 +36,7 @@ use App\Deployment\ZipPackageValidator;
 use App\Domains\DomainService;
 use App\Email\EmailService;
 use App\FileManager\DownloadService;
+use App\FileManager\FileDownloadJobHandler;
 use App\FileManager\FileManagerService;
 use App\FileManager\FileVersionService;
 use App\Help\HelpService;
@@ -97,7 +98,7 @@ final class Container
             AccountService::class => new AccountService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(HostValidator::class), $this->get(UapiClient::class), $this->get(CapabilityDetector::class), $this->get(AuditLogger::class)),
             FileVersionService::class => new FileVersionService($this->get(Database::class), $this->get(UapiClient::class)),
             FileManagerService::class => new FileManagerService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(PathGuard::class), $this->get(FileVersionService::class), $this->get(AuditLogger::class)),
-            DownloadService::class => new DownloadService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PathGuard::class), $this->get(UapiClient::class), $this->get(AuditLogger::class), $this->root . '/storage/downloads'),
+            DownloadService::class => new DownloadService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(PathGuard::class), $this->get(UapiClient::class), $this->get(AuditLogger::class), $this->get(QueueService::class), $this->root . '/storage/downloads', Env::int('MAX_DOWNLOAD_BYTES', 104_857_600)),
             CpanelDatabaseService::class => new CpanelDatabaseService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
             DirectDatabaseConnectionService::class => new DirectDatabaseConnectionService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(CpanelDatabaseService::class), $this->get(HostValidator::class), $this->get(Crypto::class), $this->get(AuditLogger::class)),
             DataManagerService::class => new DataManagerService($this->get(DirectDatabaseConnectionService::class), $this->get(AuditLogger::class)),
@@ -137,7 +138,7 @@ final class Container
             NotificationService::class => new NotificationService($this->get(Database::class), $this->get(Translator::class), $this->get(TelegramClient::class)),
             UploadReceiver::class => new UploadReceiver($this->root . '/storage/temp'),
             ErrorGuidanceService::class => new ErrorGuidanceService(),
-            BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), rtrim((string) Config::app('url'), '/') . '/miniapp/', $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(PlanGuard::class), $this->root . '/storage/temp', Env::int('TELEGRAM_SEND_MAX_BYTES', 50_000_000)),
+            BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), rtrim((string) Config::app('url'), '/') . '/miniapp/', $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(PlanGuard::class), $this->root . '/storage/temp'),
             CleanupService::class => new CleanupService($this->get(Database::class), $this->root . '/storage'),
             QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class)),
             default => throw new AppException('Service is not registered: ' . $id, 500, 'service_not_registered'),
@@ -152,6 +153,7 @@ final class Container
         return [
             'sql.import' => new SqlImportJobHandler($this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(Database::class), $this->get(AuditLogger::class), $this->root . '/storage/temp', $this->root . '/storage/backups'),
             'sql.export' => new SqlExportJobHandler($this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(Database::class), $this->get(AuditLogger::class), $this->root . '/storage/downloads'),
+            'file.download' => new FileDownloadJobHandler($this->get(DownloadService::class), $this->get(Database::class), $this->get(TelegramClient::class), $this->get(Translator::class), (string) Config::app('url'), Env::int('TELEGRAM_SEND_MAX_BYTES', 50_000_000)),
             'deployment.run' => new DeploymentJobHandler($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(HealthCheckService::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
             'deployment.rollback' => new RollbackJobHandler($this->get(Database::class), $this->get(DeploymentRollbackExecutor::class), $this->get(OperationLockService::class), $this->get(AuditLogger::class)),
             'admin.broadcast' => new BroadcastJobHandler($this->get(Database::class), $this->get(QueueService::class), $this->get(TelegramClient::class)),
