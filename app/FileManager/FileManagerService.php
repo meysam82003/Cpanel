@@ -142,7 +142,7 @@ final class FileManagerService
     /** @param list<array{path:string,mime?:string,name?:string}> $uploads
      *  @return array<string,mixed>
      */
-    public function upload(int $userId, int $accountId, string $directory, array $uploads, string $collisionPolicy = 'reject'): array
+    public function upload(int $userId, int $accountId, string $directory, array $uploads, string $collisionPolicy = 'reject', array $auditMetadata = []): array
     {
         [, $connection, , $safeDirectory] = $this->context($userId, $accountId, $directory);
         if ($uploads === [] || count($uploads) > 20) {
@@ -154,12 +154,13 @@ final class FileManagerService
             if (!is_file($upload['path']) || !is_readable($upload['path'])) {
                 throw new AppException('An uploaded temporary file is missing.', 422, 'upload_temp_missing');
             }
-            $name = $this->resolveCollision($userId, $accountId, $safeDirectory, $name, $collisionPolicy);
+            $name = $this->resolveUploadName($userId, $accountId, $safeDirectory, $name, $collisionPolicy);
             $actualMime = (new \finfo(FILEINFO_MIME_TYPE))->file($upload['path']) ?: 'application/octet-stream';
             $files['file-' . ($index + 1)] = ['path' => $upload['path'], 'mime' => $actualMime, 'name' => $name];
         }
         $result = $this->cpanel->call($connection, 'Fileman', 'upload_files', ['dir' => $safeDirectory], 'POST', $files, false);
-        $this->audit->record($userId, $accountId, 'file.upload', 'success', 'directory', $safeDirectory, ['count' => count($files), 'filenames' => array_column($files, 'name')]);
+        $metadata = ['count' => count($files), 'filenames' => array_column($files, 'name')] + $auditMetadata;
+        $this->audit->record($userId, $accountId, 'file.upload', 'success', 'directory', $safeDirectory, $metadata);
         return ['directory' => $safeDirectory, 'files' => array_column($files, 'name'), 'cpanel' => $result['data']];
     }
 
@@ -342,7 +343,7 @@ final class FileManagerService
         return strtolower((string) pathinfo($name, PATHINFO_EXTENSION)) ?: 'text';
     }
 
-    private function resolveCollision(int $userId, int $accountId, string $directory, string $name, string $policy): string
+    public function resolveUploadName(int $userId, int $accountId, string $directory, string $name, string $policy): string
     {
         if (!in_array($policy, ['reject', 'overwrite', 'rename'], true)) {
             throw new AppException('Upload collision policy is invalid.', 422, 'invalid_collision_policy');

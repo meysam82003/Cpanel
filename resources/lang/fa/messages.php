@@ -60,6 +60,7 @@ return [
     'files.rename_automatically' => 'نام‌گذاری خودکار',
     'files.overwrite' => '🟠 جایگزینی فایل موجود',
     'files.upload_document_prompt' => 'اکنون فایل را به‌صورت Telegram Document ارسال کنید. اندازه، نام و MIME سمت سرور بررسی می‌شود.',
+    'files.upload_queued' => 'آپلود :name در صف قرار گرفت (Job #:job). پیشرفت در صفحه Jobها دیده می‌شود و نتیجه یا خطای امن همین‌جا ارسال خواهد شد.',
     'files.downloading_from_telegram' => 'در حال دریافت امن فایل از Telegram…',
     'files.uploading_to_cpanel' => 'دانلود موقت کامل شد؛ در حال ارسال به cPanel…',
     'files.upload_complete' => '✅ فایل :name آپلود و نسخه موقت پاک شد.',
@@ -104,4 +105,7 @@ return [
     'notification.token_failed' => 'ارتباط با :host ناموفق بود. Token و Capabilityها را بررسی کنید.',
     'notification.security_title' => 'هشدار امنیتی سیستم',
     'notification.security_event' => 'رویداد امنیتی با کد :code ثبت شد. جزئیات را در پنل ادمین بررسی کنید.',
+    'notification.file_title' => 'وضعیت آپلود فایل',
+    'notification.file_upload_done' => 'فایل :name با موفقیت آپلود شد (Job #:job) و نسخه موقت Telegram پاک شد.',
+    'notification.file_upload_failed' => 'آپلود :name پس از تلاش‌های امن کامل نشد (Job #:job، کد: :code). برای راهنمایی صفحه Jobها یا راهنمای File Manager را باز کنید.',
 ];

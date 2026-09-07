@@ -79,6 +79,14 @@ assert(read('app/Queue/CleanupService.php').includes("'user_sessions'"), 'Expire
 assert(read('app/Core/Container.php').includes("'file.download' => new FileDownloadJobHandler"), 'Prepared downloads are not connected to the queue worker.');
 assert(read('app/FileManager/DownloadService.php').includes("status = 'ready'") && read('app/FileManager/DownloadService.php').includes('download_integrity_failed'), 'Secure downloads are not prepared and integrity-checked before serving.');
 assert(read('app/FileManager/FileDownloadJobHandler.php').includes("'sendDocument'") && read('app/FileManager/FileDownloadJobHandler.php').includes("'secure_link'"), 'Queued downloads do not provide real Telegram and secure-link delivery paths.');
+assert(schema.includes('CREATE TABLE IF NOT EXISTS telegram_file_uploads'), 'Telegram upload retry state is not persisted.');
+assert(read('app/Core/Container.php').includes("'telegram.file_upload' => new TelegramFileUploadJobHandler"), 'Telegram uploads are not connected to the queue worker.');
+const telegramUpload = read('app/FileManager/TelegramFileUploadJobHandler.php');
+assert(telegramUpload.includes('downloadFile(') && telegramUpload.includes('resolveUploadName(') && telegramUpload.includes("'overwrite'"), 'Telegram upload worker is missing real download, deterministic target reservation, or cPanel upload.');
+assert(telegramUpload.includes('@unlink($temporary)') && telegramUpload.includes("$success ? 'completed' : 'failed'"), 'Telegram upload worker does not clean temporary files or persist completion.');
+assert(!read('app/Telegram/BotHandler.php').includes('downloadFile($fileId'), 'Telegram file download still blocks the webhook request instead of using the queue.');
+assert(read('app/FileManager/TelegramUploadService.php').includes('OFFICIAL_BOT_API_DOWNLOAD_LIMIT = 20_000_000'), 'Telegram Bot API download cap is not enforced.');
+assert(!read('database/migrations/008_telegram_file_uploads.sql').includes('file_id'), 'Raw Telegram file identifiers must remain only inside encrypted queue payloads.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

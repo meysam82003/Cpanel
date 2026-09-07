@@ -141,6 +141,7 @@ final class InstallerService
             'MINIAPP_SESSION_TTL' => '3600',
             'QUEUE_STALE_AFTER_SECONDS' => '3600',
             'MAX_UPLOAD_BYTES' => '20971520',
+            'TELEGRAM_DOWNLOAD_MAX_BYTES' => '20000000',
             'MAX_DOWNLOAD_BYTES' => '104857600',
             'TELEGRAM_SEND_MAX_BYTES' => '50000000',
             'LOG_LEVEL' => 'warning',

@@ -60,6 +60,7 @@ return [
     'files.rename_automatically' => 'Rename automatically',
     'files.overwrite' => '🟠 Overwrite existing file',
     'files.upload_document_prompt' => 'Now send the file as a Telegram document. Size, filename, and MIME are validated on the server.',
+    'files.upload_queued' => 'Upload of :name was queued (job #:job). Progress is available in the Jobs page; completion or a safe error will be sent here.',
     'files.downloading_from_telegram' => 'Securely downloading the file from Telegram…',
     'files.uploading_to_cpanel' => 'Temporary download completed; uploading to cPanel…',
     'files.upload_complete' => '✅ :name was uploaded and the temporary copy was removed.',
@@ -104,4 +105,7 @@ return [
     'notification.token_failed' => 'Connection to :host failed. Review the token and capabilities.',
     'notification.security_title' => 'System security alert',
     'notification.security_event' => 'A security event with code :code was recorded. Review details in the admin panel.',
+    'notification.file_title' => 'File upload status',
+    'notification.file_upload_done' => ':name was uploaded successfully (job #:job). The temporary Telegram copy was removed.',
+    'notification.file_upload_failed' => ':name could not be uploaded after safe retries (job #:job, code: :code). Open Jobs or File Manager help for guidance.',
 ];

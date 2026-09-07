@@ -49,7 +49,7 @@ final class PlanGuard
     public function dailyOperation(int $userId): void
     {
         $plan = $this->plan($userId);
-        $row = $this->database->one("SELECT COUNT(*) AS operations FROM audit_logs WHERE user_id = ? AND created_at >= UTC_DATE() AND action <> 'file.browse'", [$userId]);
+        $row = $this->database->one("SELECT COUNT(*) AS operations FROM audit_logs WHERE user_id = ? AND created_at >= ? AND action <> 'file.browse'", [$userId, gmdate('Y-m-d 00:00:00')]);
         if ((int) ($row['operations'] ?? 0) >= (int) $plan['daily_operation_limit']) {
             throw new AppException('Your daily operation limit has been reached.', 429, 'daily_operation_limit', ['limit' => (int) $plan['daily_operation_limit']], 'plans');
         }

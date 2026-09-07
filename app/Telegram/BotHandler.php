@@ -15,7 +15,7 @@ use App\Core\Translator;
 use App\Help\HelpService;
 use App\FileManager\DownloadService;
 use App\FileManager\FileManagerService;
-use App\Plans\PlanGuard;
+use App\FileManager\TelegramUploadService;
 use App\Security\ConfirmationService;
 use App\Security\RateLimiter;
 use App\Security\SecurityCenterService;
@@ -40,8 +40,7 @@ final class BotHandler
         private readonly string $miniAppUrl,
         private readonly FileManagerService $files,
         private readonly DownloadService $downloads,
-        private readonly PlanGuard $plans,
-        private readonly string $tempRoot,
+        private readonly TelegramUploadService $uploads,
     ) {
     }
 
@@ -91,7 +90,7 @@ final class BotHandler
         $session = $this->sessions->get($userId);
         if (isset($message['document']) && is_array($message['document'])) {
             if ($session !== null && $session['state'] === 'waiting_for_upload_document') {
-                $this->documentInput($user, (int) $chatId, $message['document'], $session);
+                $this->documentInput($user, (int) $chatId, (int) ($message['message_id'] ?? 0), $message['document'], $session);
             } else {
                 $this->send((int) $chatId, $this->translator->get('files.upload_start_first', $language));
             }
@@ -398,7 +397,7 @@ final class BotHandler
      *  @param array<string,mixed> $document
      *  @param array{state:?string,payload:array<string,mixed>,active_account_id:?int} $session
      */
-    private function documentInput(array $user, int $chatId, array $document, array $session): void
+    private function documentInput(array $user, int $chatId, int $messageId, array $document, array $session): void
     {
         $userId = (int) $user['id'];
         $language = $this->language($user);
@@ -406,33 +405,13 @@ final class BotHandler
         $accountId = (int) ($payload['account_id'] ?? 0);
         $directory = (string) ($payload['directory'] ?? '');
         $collision = ($payload['collision'] ?? null) === 'overwrite' ? 'overwrite' : 'rename';
-        $fileId = (string) ($document['file_id'] ?? '');
-        $filename = basename(str_replace('\\', '/', (string) ($document['file_name'] ?? 'telegram-document.bin')));
-        $reportedSize = (int) ($document['file_size'] ?? -1);
-        $limit = (int) $this->plans->plan($userId)['max_upload_bytes'];
-        if ($fileId === '' || $reportedSize < 0 || $reportedSize > $limit) {
-            throw new AppException('The Telegram document is invalid or exceeds your plan limit.', 413, 'upload_size_exceeded', ['limit' => $limit], 'files.upload');
-        }
-        if (!is_dir($this->tempRoot) && !mkdir($this->tempRoot, 0700, true) && !is_dir($this->tempRoot)) {
-            throw new AppException('Secure upload storage is unavailable.', 500, 'upload_storage_unavailable');
-        }
-        $temporary = rtrim($this->tempRoot, '/') . '/telegram-' . bin2hex(random_bytes(16));
-        try {
-            $this->send($chatId, $this->translator->get('files.downloading_from_telegram', $language));
-            $download = $this->telegram->downloadFile($fileId, $temporary, $limit);
-            if ($download['bytes'] > $limit) {
-                throw new AppException('The Telegram document exceeds your plan limit.', 413, 'upload_size_exceeded', ['limit' => $limit], 'files.upload');
-            }
-            $this->telegram->call('sendChatAction', ['chat_id' => $chatId, 'action' => 'upload_document']);
-            $this->send($chatId, $this->translator->get('files.uploading_to_cpanel', $language));
-            $this->files->upload($userId, $accountId, $directory, [['path' => $temporary, 'name' => $filename]], $collision);
-            $this->sessions->cancel($userId);
-            $this->send($chatId, $this->translator->get('files.upload_complete', $language, ['name' => htmlspecialchars($filename, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')]), $this->hostKeyboard($userId, $language, $accountId));
-        } finally {
-            if (is_file($temporary)) {
-                @unlink($temporary);
-            }
-        }
+        $queued = $this->uploads->enqueue($userId, $accountId, $chatId, $messageId, $document, $directory, $collision, $language);
+        $this->sessions->cancel($userId);
+        $this->send(
+            $chatId,
+            $this->translator->get('files.upload_queued', $language, ['job' => $queued['job_id'], 'name' => htmlspecialchars($queued['filename'], ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8')]),
+            $this->hostKeyboard($userId, $language, $accountId)
+        );
     }
 
     /** @param array<string,mixed> $user */
