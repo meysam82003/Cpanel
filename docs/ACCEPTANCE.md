@@ -162,6 +162,6 @@ Use a new installation and disposable cPanel account. “Expected” is the acce
 ## Final decision
 
 - **Implementation acceptance:** PASS for all 95 sections with concrete source evidence.
-- **Automated acceptance:** PASS — CI #8 (`34187466831`) completed PHP 8.2/8.3/8.4, MariaDB installation and release-package jobs successfully.
+- **Automated acceptance:** PASS — CI #13 (`34218753236`) completed PHP 8.2/8.3/8.4, MariaDB installation and release-package jobs successfully for implementation commit `717f33cbab7be53ca86114dbb7a05f0ef2e3d965`.
 - **Provider-live acceptance:** NOT EXECUTED in this workspace because no real Bot Token/domain/cPanel disposable credentials were provided. Run the tables above before production enrollment.
 - **Fake-completion check:** PASS; unsupported provider behavior is surfaced through capability/error state, not fabricated output.

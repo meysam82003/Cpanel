@@ -8,12 +8,12 @@ Verified release-readiness run:
 
 | Item | Result |
 |---|---|
-| Workflow | CI #8, run `34187466831` |
-| Commit | `49d54fcc4cef4cee127751890838a0878e7fec01` |
+| Workflow | CI #13, run `34218753236` |
+| Commit | `717f33cbab7be53ca86114dbb7a05f0ef2e3d965` |
 | Database image | MariaDB 11.4.13 |
 | Test | `tests/Integration/MariaDbInstallationTest.php` |
 | Result | PASS — 1 test, 97 assertions |
-| Ordered migrations | 11 applied on fresh schema |
+| Ordered migrations | 12 applied on fresh schema |
 | Repeated migration | 0 newly applied; PASS |
 | Plans | 4, with expected backup/deployment flags |
 | Help catalog | 78 topics inserted and idempotently refreshed |
@@ -21,7 +21,7 @@ Verified release-readiness run:
 | Character set | Every application table uses an `utf8mb4_*` collation |
 | Foreign-key topology | More than 20 constraints present |
 
-The same run also passed 134 PHPUnit tests/520 assertions on each PHP matrix target and built the verified release artifact after every test/install dependency succeeded.
+The same run also passed 136 PHPUnit tests/529 assertions on each PHP matrix target and built the verified release artifact after every test/install dependency succeeded.
 
 ## Web Installer contract verified automatically
 

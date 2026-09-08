@@ -16,12 +16,12 @@ The `CI` workflow is required to complete these jobs before its installable arti
 
 Verified release-readiness run:
 
-- GitHub commit: `49d54fcc4cef4cee127751890838a0878e7fec01`
-- Workflow: `CI #8`, run `34187466831`.
-- PHP suite: 146 PHP files linted; 134 tests, 520 assertions, 3 explicit credential/environment skips.
+- GitHub commit: `717f33cbab7be53ca86114dbb7a05f0ef2e3d965`
+- Workflow: `CI #13`, run `34218753236`.
+- PHP suite: 147 PHP files linted; 136 tests, 529 assertions, 3 explicit credential/environment skips.
 - MariaDB installation: 1 integration test, 97 assertions on MariaDB 11.4.13.
-- Package: secret/integrity build passed; inner release SHA-256 `ab69d6f47530a854692d7d805dfbe2e5bd5d6d93a183addc4e6f533dc07fb769`.
-- Uploaded artifact: `telegram-cpanel-manager-49d54fcc4cef4cee127751890838a0878e7fec01`, artifact ID `10041012598`, 691,863 bytes, retained through 2026-10-08.
+- Package: secret/integrity build passed; inner release SHA-256 `ee04f6bac7bbfb70d7a959d930e4a7f0f56b300e57659af20d960f81bd68548d`.
+- Uploaded artifact: `telegram-cpanel-manager-717f33cbab7be53ca86114dbb7a05f0ef2e3d965`, artifact ID `10052873630`, 696,478 bytes, retained through 2026-10-08; uploaded-artifact digest `1330ad314f90324f83dba36084641f2d85edb03b34490bf0dd3a1ae8b6b4a4bb`.
 - All PHP 8.2, 8.3, 8.4, installation, and package jobs: success.
 
 ## Unit and security coverage
