@@ -31,3 +31,37 @@ jobs:
         with:
           composer-options: --prefer-dist --no-interaction --no-progress
       - run: composer test
+
+  installation:
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MARIADB_ROOT_PASSWORD: root-test-password
+          MARIADB_DATABASE: tcm_install_test
+          MARIADB_USER: tcm_test
+          MARIADB_PASSWORD: tcm-test-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: curl, fileinfo, json, mbstring, openssl, pdo, pdo_mysql, pdo_sqlite, zip, zlib
+          coverage: none
+      - uses: ramsey/composer-install@v3
+        with:
+          composer-options: --prefer-dist --no-interaction --no-progress
+      - name: Verify fresh and repeated installation on MariaDB
+        env:
+          TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=tcm_install_test;charset=utf8mb4
+          TEST_MYSQL_USER: tcm_test
+          TEST_MYSQL_PASSWORD: tcm-test-password
+        run: vendor/bin/phpunit tests/Integration/MariaDbInstallationTest.php --colors=always
