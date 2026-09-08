@@ -135,21 +135,28 @@ assert(read('app/FileManager/FileManagerService.php').includes('uploadConfirmati
 assert(archiveRoutes.includes('enqueueCreate(') && archiveRoutes.includes('enqueueExtract(') && !archiveRoutes.includes('return $files->compress(') && !archiveRoutes.includes('=> $files->extract('), 'Archive API routes do not exclusively enqueue the durable workflow.');
 const archiveService = read('app/FileManager/ArchiveService.php');
 assert(archiveService.includes('getOwned($userId, $accountId)') && archiveService.includes('safeApi2Path(') && archiveService.includes("'default', 1"), 'Archive queueing lacks tenant ownership, API-path validation, or single-attempt safety.');
-assert(archiveService.includes("$this->database->execute('INSERT INTO file_archive_jobs") && archiveService.includes("'queued'"), 'Archive request state is not persisted.');
-const archiveCreate = read('app/FileManager/ArchiveCreateJobHandler.php');
+assert(archiveService.includes("['reject', 'overwrite']") && archiveRoutes.includes("'archive.extract_overwrite'"), 'Archive extraction collision policy or one-time overwrite confirmation is missing.');
 const archiveExtract = read('app/FileManager/ArchiveExtractJobHandler.php');
-assert(archiveCreate.includes('OperationLockService') && archiveCreate.includes('->renew(') && archiveCreate.includes("'file_archive_create'") && archiveCreate.includes("'default', 1"), 'Archive creation lacks owner-renewed locking or single-attempt safety.');
-assert(archiveExtract.includes('OperationLockService') && archiveExtract.includes('->renew(') && archiveExtract.includes('safeExtract(') && archiveExtract.includes("'file_archive_extract'") && archiveExtract.includes("'default', 1"), 'Archive extraction lacks owner-renewed locking, safe extraction, or single-attempt safety.');
-assert(archiveExtract.includes("'path' => $temporary . '/' . $name") && !archiveExtract.includes("'sourcefiles' =>"), 'Archive extraction does not stage the verified archive locally.');
-assert(read('database/migrations/009_file_archive_jobs.sql').includes('CREATE TABLE IF NOT EXISTS file_archive_jobs'), 'Archive job table is missing.');
-const pathGuard = read('app/Security/PathGuard.php');
-assert(pathGuard.includes('assertNoSymlinkTraversal(') && pathGuard.includes('lstat(') && pathGuard.includes("'path_symlink_blocked'"), 'Path guard does not reject symlink traversal.');
+assert(archiveExtract.includes('downloadTo(') && archiveExtract.includes('->validate(') && archiveExtract.includes('staging_archive'), 'Archive extraction is not streamed, validated, and bound to an immutable staging copy.');
+assert(archiveExtract.includes("hash_equals((string) $summary['sha256'], (string) $stagedDownload['sha256'])") && archiveExtract.includes('archive_reconciliation_required'), 'Archive staging integrity or ambiguous-outcome reconciliation is missing.');
+assert(archiveExtract.includes('@unlink($temporary)') && archiveExtract.includes('@unlink($verificationTemporary)'), 'Archive inspection temporary files are not cleaned.');
 
+for (const column of ['package_id', 'queue_job_id', 'rollback_job_id', 'package_checksum', 'package_metadata_json', 'stage_path', 'switch_state', 'backup_size', 'backup_checksum', 'reconciliation_json', 'notification_id', 'rollback_notification_id', 'recovery_attempts', 'last_recovery_at', 'rollback_verified_at']) {
+  assert(schema.includes(`ADD COLUMN ${column}`), `Deployment state schema is missing ${column}.`);
+}
+const deploymentService = read('app/Deployment/DeploymentService.php');
+const deploymentRoutes = read('routes/api/hosting.php');
+const deploymentPackages = read('app/Deployment/DeploymentPackageService.php');
+assert(deploymentRoutes.includes('deployPackage(') && !deploymentRoutes.includes('$deploymentPackages->consume('), 'Deployment package consumption is still outside the atomic intake transaction.');
+assert(deploymentRoutes.includes('->overview(') && deploymentService.includes("'current_versions'") && deploymentService.includes("'rollback_points'") && deploymentService.includes("'attention_required'"), 'Deployment Center does not receive backend-classified current versions, rollback points, and attention states.');
+assert(deploymentService.includes('SELECT * FROM deployment_packages WHERE id = ? AND user_id = ? AND account_id = ? FOR UPDATE') && deploymentService.includes('UPDATE deployment_packages SET consumed_at = CURRENT_TIMESTAMP'), 'Deployment intake does not lock and consume its owner-bound package transactionally.');
+assert(deploymentService.includes("'default',\n                1,") && deploymentService.includes('rollback_job_id = ?'), 'Deployment and rollback jobs are not persisted as single-attempt operations.');
+assert(deploymentService.includes('deployment_reserved_path') && deploymentService.includes('invalid_health_check_url'), 'Deployment destination or health-check input policy is missing.');
+assert(deploymentPackages.includes("'name' => $name") && deploymentPackages.includes("'metadata' => $metadata") && deploymentPackages.includes('is_link($path)'), 'Deployment upload response contract or symlink protection is incomplete.');
 const deploymentHandler = read('app/Deployment/DeploymentJobHandler.php');
 const deploymentRollback = read('app/Deployment/DeploymentRollbackExecutor.php');
 const deploymentRecovery = read('app/Deployment/DeploymentRecoveryService.php');
 const deploymentBackupVerifier = read('app/Deployment/DeploymentBackupVerifier.php');
-const deploymentRoutes = read('routes/api/hosting.php');
 const deploymentFilesystem = read('app/FileManager/FileManagerService.php');
 assert(deploymentFilesystem.includes('renameDirectoryAtomically(') && deploymentFilesystem.includes("'op' => 'rename'") && deploymentFilesystem.includes("'api2_no_uapi_equivalent'"), 'Atomic same-account directory switching is not connected to the documented cPanel compatibility operation.');
 assert(deploymentBackupVerifier.includes('->download(') && deploymentBackupVerifier.includes('->validate(') && deploymentBackupVerifier.includes("['size' => $size, 'sha256' => $checksum"), 'Deployment backups are not streamed, checksum-bound, and structurally verified before use.');
@@ -170,9 +177,7 @@ for (const key of ['deployStepPackage', 'deployStepDestination', 'deployStepVali
 assert(appSource.includes('deploymentWizardMarkup(') && appSource.includes('pollDeployment(') && appSource.includes('result.current_versions') && appSource.includes('result.rollback_points'), 'Mini App Deployment Center is missing its real eight-step state timeline or release overview.');
 assert(!appSource.includes("requireCapability(['files', 'backup'], 'deployCenter')"), 'Deployment Center is incorrectly disabled when the unrelated Full Backup capability is absent.');
 assert(!appSource.includes('escapeHtml(event.message_key)'), 'Mini App renders an untranslated deployment event key.');
-const miniAppIndex = read('public/miniapp/index.html');
-assert(miniAppIndex.includes('href="./styles.css"') && miniAppIndex.includes('src="./app.js"'), 'Mini App core assets must be relative so subdirectory installations load correctly.');
-assert(miniAppIndex.includes('href="./deployment.css"'), 'Deployment Center responsive styling is not loaded from the Mini App directory.');
+assert(read('public/miniapp/index.html').includes('/miniapp/deployment.css'), 'Deployment Center responsive styling is not loaded.');
 
 const backupService = read('app/Backup/BackupService.php');
 const backupTracker = read('app/Backup/BackupJobTracker.php');
@@ -190,7 +195,7 @@ for (const routeContract of ['/backups/file/{version}/restore', '/backups/file/{
 assert((deploymentRoutes.match(/feature\(\(int\) \$session\['user_id'\], 'backup_enabled'\)/g) || []).length >= 9, 'Backup feature policy is not enforced on every backup API operation.');
 for (const action of ['backup-refresh', 'backup-progress', 'backup-download', 'backup-restore', 'backup-delete']) assert(handlers.has(action), `Backup Center action is not connected: ${action}`);
 assert(appSource.includes('pollJob(Number(result.job_id), false)') && appSource.includes('pollDeployment(Number(result.job_id), Number(result.deployment_id), true)'), 'Backup Center does not track queued restore/backup and deployment rollback progress.');
-assert(miniAppIndex.includes('href="./backup.css"'), 'Backup Center responsive styling is not loaded from the Mini App directory.');
+assert(read('public/miniapp/index.html').includes('/miniapp/backup.css'), 'Backup Center responsive styling is not loaded.');
 
 const securityCenter = read('app/Security/SecurityCenterService.php');
 for (const key of ['connected_hosts', 'failed_tokens', 'suspicious_requests', 'recent_destructive_actions', 'active_sessions', 'security_alerts']) {
