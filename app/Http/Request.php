@@ -25,7 +25,7 @@ final class Request
     ) {
     }
 
-    public static function capture(): self
+    public static function capture(?string $appUrl = null): self
     {
         $raw = file_get_contents('php://input') ?: '';
         $contentType = strtolower($_SERVER['CONTENT_TYPE'] ?? '');
@@ -63,13 +63,28 @@ final class Request
         if (strlen($uri) > 2048 || preg_match('/%(?:00|2f|5c)/i', $uri)) {
             throw new AppException('Request path is invalid.', 400, 'invalid_request_path');
         }
-        $decodedPath = rawurldecode($uri);
+        $decodedPath = '/' . ltrim(rawurldecode($uri), '/');
         if (preg_match('/[\x00-\x1F\x7F]/', $decodedPath)) {
             throw new AppException('Request path is invalid.', 400, 'invalid_request_path');
         }
+
+        if ($appUrl !== null && $appUrl !== '') {
+            $basePath = parse_url($appUrl, PHP_URL_PATH);
+            if (is_string($basePath) && $basePath !== '') {
+                $basePath = '/' . trim($basePath, '/');
+                if ($basePath === '/') {
+                    $basePath = '';
+                }
+                if ($basePath !== '' && ($decodedPath === $basePath || str_starts_with($decodedPath, $basePath . '/'))) {
+                    $decodedPath = substr($decodedPath, strlen($basePath));
+                    $decodedPath = '/' . ltrim($decodedPath, '/');
+                }
+            }
+        }
+
         return new self(
             strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET'),
-            '/' . ltrim($decodedPath, '/'),
+            $decodedPath,
             $_GET,
             $body,
             $headers,
