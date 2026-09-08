@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          fetch-depth: 0
+
+      - name: Verify release source is current main
+        id: source
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git fetch --no-tags origin main
+          current_main="$(git rev-parse origin/main)"
+          checked_out="$(git rev-parse HEAD)"
+          if [[ "$SOURCE_SHA" == "$current_main" && "$SOURCE_SHA" == "$checked_out" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping stale successful CI commit $SOURCE_SHA; current main is $current_main."
+          fi
+
+      - name: Validate version and immutable tag
+        if: steps.source.outputs.current == 'true'
+        id: version
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "VERSION is not a supported semantic version." >&2
+            exit 1
+          fi
+          tag="v$version"
+          git fetch --tags origin
+          if git rev-parse --verify --quiet "refs/tags/$tag^{commit}" >/dev/null; then
+            tag_sha="$(git rev-list -n 1 "$tag")"
+            if [[ "$tag_sha" != "$SOURCE_SHA" ]]; then
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              echo "Version $tag is already immutable at $tag_sha; bump VERSION for $SOURCE_SHA."
+              exit 0
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build and verify release assets
+        if: steps.source.outputs.current == 'true' && steps.version.outputs.published == 'true'
+        run: scripts/build-release.sh
+
+      - name: Create release or refresh matching assets
+        if: steps.source.outputs.current == 'true' && steps.version.outputs.published == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          archive="dist/telegram-cpanel-manager-$version.zip"
+          checksum="$archive.sha256"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" "$archive" "$checksum" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "$archive" "$checksum" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$SOURCE_SHA" \
+              --title "Telegram cPanel Manager $tag" \
+              --notes-file docs/RELEASE_NOTES.md \
+              --latest
+          fi
+
+      - name: Verify published release and assets
+        if: steps.source.outputs.current == 'true' && steps.version.outputs.published == 'true'
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          tag="${{ steps.version.outputs.tag }}"
+          version="${{ steps.version.outputs.version }}"
+          release_tag="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)"
+          mapfile -t assets < <(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          [[ "$release_tag" == "$tag" ]]
+          printf '%s\n' "${assets[@]}" | grep -Fxq "telegram-cpanel-manager-$version.zip"
+          printf '%s\n' "${assets[@]}" | grep -Fxq "telegram-cpanel-manager-$version.zip.sha256"
