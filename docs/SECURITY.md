@@ -25,7 +25,7 @@ The super admin can manage service users/plans/operations but cannot retrieve ra
 | Archive traversal / link attack | Central-directory inspection, absolute/drive/traversal/link rejection, file count/expanded size/ratio limits, immutable staged copy, checksum match | `ArchiveSafetyValidatorTest`, `ArchiveServiceTest`, queue handler contracts |
 | ZIP deployment bomb | Same archive validator plus deployment top-level and manifest limits; isolated remote staging | Deployment intake/handler tests |
 | SQL injection in manager | Identifiers quoted after server metadata/strict validation; row keys parameterized; filter/operator allowlists | Data-manager code contract and SQL safety tests |
-| Dangerous arbitrary SQL | One statement, classifier, read limits, destructive preview, one-time confirmation, optional/automatic backup | `SqlSafetyAnalyzerTest`; coordinator/routes |
+| Dangerous arbitrary SQL | One statement, classifier, read-only pagination and byte limits, destructive preview, one-time confirmation, optional/automatic backup; optional history stores no query text | `SqlSafetyAnalyzerTest`; coordinator/routes/static privacy contract |
 | Import path escape | Only uploaded or managed backup roots, realpath containment, exclusive staging creation, size and SHA-256 check | `SqlTransferServiceTest` |
 | Upload abuse | Count and byte caps, PHP upload error check, random temp name, `finfo` MIME, sanitized destination name, plan quota, cleanup | Upload receiver and Telegram upload tests |
 | Download exfiltration | Owner-bound request, managed preparation path, max bytes, checksum, random one-time token, expiry/consume state | `DownloadServiceTest` |

@@ -25,7 +25,7 @@ Legend:
 | 9 | Trash system | PASS-A/C | Move to Trash, restore, permanent/empty confirmation and audit; provider capability/fallback handling. |
 | 10 | cPanel Database Manager | PASS-A/C | Database/user/password/privilege/Remote MySQL UAPI paths with confirmation and capability detection. |
 | 11 | Database Data Manager | PASS-A/C | Connection automation; table structure, CRUD, filter/page/order, bulk and CSV. Direct MySQL is provider-network dependent. |
-| 12 | SQL Console | PASS-A | Analyze/classify, one statement, result limits, history/saved/EXPLAIN, destructive confirmation and backup coordination. |
+| 12 | SQL Console | PASS-A | Analyze/classify, one statement, read-only result pagination and byte/time limits, secret-safe optional history, encrypted saved queries/EXPLAIN, destructive confirmation and backup coordination. |
 | 13 | Database connection automation | PASS-A/C | Generated restricted DB user, privilege/remote-host coordination, encrypted connection, status/revoke; remote network conditional. |
 | 14 | SQL import/export | PASS-A/C | Queue-backed SQL/gzip import and SQL/CSV export, staging, checksum/size, artifact download and pre-import backup. |
 | 15 | Domains | PASS-C | Domain/subdomain/redirect/DNS CRUD, serial-bound DNS edit, warnings and confirmation; token/Feature Manager dependent. |
@@ -80,7 +80,7 @@ Legend:
 | 59 | Mini App Code Editor | PASS-A/C | Bundled Ace, syntax modes/themes, chunk loading, save/save-as/find/replace/history and version restore. |
 | 60 | Mini App Database Manager | PASS-A/C | Database cards plus users/privileges/Remote MySQL/import/export/connect actions. |
 | 61 | Mini App Table Browser | PASS-A/C | Rows/structure tabs, filter/order/pagination/visible columns, row/column/index/table operations. |
-| 62 | Mini App SQL Editor | PASS-A/C | Editor, analyze/execute/explain/history/saved query, result rendering and destructive preview. |
+| 62 | Mini App SQL Editor | PASS-A/C | Editor, analyze/execute/explain, read-only result pager, optional secret-safe history, encrypted saved query, result rendering and destructive preview. |
 | 63 | Mini App Import/Export | PASS-A/C | Real upload/form, queued progress, result download and operation warnings. |
 | 64 | Mini App Deployment Center | PASS-A/C | Exact eight-step workflow, active/current/rollback/attention groups, live polling/timeline and confirmed rollback. |
 | 65 | Mini App Backup Center | PASS-A/C | File/database/deployment/full groups, type/target/size/date/status and state-valid download/restore/delete. |
@@ -130,7 +130,7 @@ Use a new installation and disposable cPanel account. “Expected” is the acce
 | Delete/restore Trash | Confirmation/path tests | One-time preview; Trash and restore verified |
 | Create DB/user/privileges | Route/UAPI contract | Provider creates exact resources |
 | Browse database | Connection/security tests | Works only when Remote MySQL/network permits |
-| Execute SELECT | SQL safety tests | Bounded result and history |
+| Execute SELECT | SQL safety/static contracts | Bounded paginated result and query-text-free optional history |
 | Import/export | Queue/transfer tests | Job completes; checksum-bound artifact downloads |
 | Domain/DNS | UAPI contract | Provider mutation and refreshed list/zone |
 | Email | UAPI contract | Mailbox/forwarder/autoresponder mutation reflected |

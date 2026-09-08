@@ -21,10 +21,15 @@ final class SqlConsoleService
     ) {
     }
 
-    /** @return array{analysis:array<string,mixed>,columns:list<string>,rows:list<array<string,mixed>>,affected_rows:int,execution_ms:int,truncated:bool} */
-    public function execute(int $userId, int $accountId, string $databaseName, string $sql, bool $destructiveConfirmed = false, bool $saveHistory = true): array
+    /** @return array{analysis:array<string,mixed>,columns:list<string>,rows:list<array<string,mixed>>,affected_rows:int,execution_ms:int,truncated:bool,pagination:array{page:int,per_page:int,has_more:bool}} */
+    public function execute(int $userId, int $accountId, string $databaseName, string $sql, bool $destructiveConfirmed = false, bool $saveHistory = true, int $page = 1, int $perPage = 100): array
     {
         $analysis = $this->analyzer->analyze($sql);
+        $page = max(1, min(1_000, $page));
+        $perPage = max(10, min(200, $perPage));
+        if ($page > 1 && !$analysis['read_only']) {
+            throw new AppException('Only read-only SQL results can be paginated.', 422, 'sql_pagination_not_read_only', [], 'database.sql');
+        }
         if ($analysis['requires_confirmation'] && !$destructiveConfirmed) {
             throw new AppException('This destructive query requires a fresh one-time confirmation.', 409, 'sql_confirmation_required', ['analysis' => $analysis, 'query_hash' => hash('sha256', $sql)], 'database.sql');
         }
@@ -36,6 +41,7 @@ final class SqlConsoleService
         $columns = [];
         $rows = [];
         $truncated = false;
+        $hasMore = false;
         try {
             $statement = $pdo->prepare($sql);
             $statement->execute();
@@ -45,15 +51,26 @@ final class SqlConsoleService
                     $meta = $statement->getColumnMeta($index);
                     $columns[] = (string) ($meta['name'] ?? $index);
                 }
-                $bytes = 0;
-                while (($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
-                    $encoded = json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
-                    $bytes += strlen((string) $encoded);
-                    if (count($rows) >= 500 || $bytes > 2_097_152) {
-                        $truncated = true;
+                $offset = $analysis['read_only'] ? ($page - 1) * $perPage : 0;
+                for ($skipped = 0; $skipped < $offset; $skipped++) {
+                    if ($statement->fetch(PDO::FETCH_ASSOC) === false) {
                         break;
                     }
+                }
+                $bytes = 0;
+                while (count($rows) < $perPage && ($row = $statement->fetch(PDO::FETCH_ASSOC)) !== false) {
+                    $encoded = json_encode($row, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PARTIAL_OUTPUT_ON_ERROR);
+                    $rowBytes = strlen((string) $encoded);
+                    if ($bytes + $rowBytes > 2_097_152) {
+                        $truncated = true;
+                        $hasMore = true;
+                        break;
+                    }
+                    $bytes += $rowBytes;
                     $rows[] = $row;
+                }
+                if (!$hasMore && count($rows) === $perPage) {
+                    $hasMore = $statement->fetch(PDO::FETCH_ASSOC) !== false;
                 }
             }
         } catch (\Throwable $exception) {
@@ -62,9 +79,9 @@ final class SqlConsoleService
         } finally {
             $duration = (int) round((microtime(true) - $started) * 1000);
             $this->storeHistory($userId, $accountId, $databaseName, $sql, $analysis, $affected, $duration, $resultCode, $saveHistory);
-            $this->audit->record($userId, $accountId, 'sql.execute', $resultCode, 'database', $databaseName, ['query_type' => $analysis['type'], 'query_hash' => hash('sha256', $sql), 'affected_rows' => $affected, 'duration_ms' => $duration, 'truncated' => $truncated]);
+            $this->audit->record($userId, $accountId, 'sql.execute', $resultCode, 'database', $databaseName, ['query_type' => $analysis['type'], 'query_hash' => hash('sha256', $sql), 'affected_rows' => $affected, 'duration_ms' => $duration, 'truncated' => $truncated, 'page' => $page, 'per_page' => $perPage]);
         }
-        return ['analysis' => $analysis, 'columns' => $columns, 'rows' => $rows, 'affected_rows' => $affected, 'execution_ms' => $duration, 'truncated' => $truncated];
+        return ['analysis' => $analysis, 'columns' => $columns, 'rows' => $rows, 'affected_rows' => $affected, 'execution_ms' => $duration, 'truncated' => $truncated, 'pagination' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore]];
     }
 
     /** @return array<string,mixed> */
@@ -81,19 +98,7 @@ final class SqlConsoleService
     public function history(int $userId, int $accountId, int $limit = 50): array
     {
         $limit = max(1, min(100, $limit));
-        $rows = $this->database->all('SELECT id, account_id, database_name, query_encrypted, query_hash, query_type, affected_rows, duration_ms, result, created_at FROM sql_history WHERE user_id = ? AND account_id = ? ORDER BY id DESC LIMIT ' . $limit, [$userId, $accountId]);
-        foreach ($rows as &$row) {
-            if (is_string($row['query_encrypted']) && $row['query_encrypted'] !== '') {
-                try {
-                    $row['query'] = $this->crypto->decrypt($row['query_encrypted'], 'sql-history:' . $row['id'] . ':' . $userId);
-                } catch (AppException) {
-                    $row['query'] = null;
-                }
-            }
-            unset($row['query_encrypted']);
-        }
-        unset($row);
-        return $rows;
+        return $this->database->all('SELECT id, account_id, database_name, query_hash, query_type, affected_rows, duration_ms, result, created_at FROM sql_history WHERE user_id = ? AND account_id = ? ORDER BY id DESC LIMIT ' . $limit, [$userId, $accountId]);
     }
 
     public function saveQuery(int $userId, int $accountId, string $databaseName, string $name, string $sql): int
@@ -138,12 +143,10 @@ final class SqlConsoleService
     /** @param array<string,mixed> $analysis */
     private function storeHistory(int $userId, int $accountId, string $databaseName, string $sql, array $analysis, int $affected, int $duration, string $result, bool $save): void
     {
-        $this->database->execute('INSERT INTO sql_history (user_id, account_id, database_name, query_encrypted, query_hash, query_type, affected_rows, duration_ms, result) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)', [$userId, $accountId, $databaseName, hash('sha256', $sql), $analysis['type'], $affected, $duration, $result]);
-        if ($save) {
-            $id = $this->database->lastInsertId();
-            $encrypted = $this->crypto->encrypt($sql, 'sql-history:' . $id . ':' . $userId);
-            $this->database->execute('UPDATE sql_history SET query_encrypted = ? WHERE id = ? AND user_id = ?', [$encrypted, $id, $userId]);
+        if (!$save) {
+            return;
         }
+        $this->database->execute('INSERT INTO sql_history (user_id, account_id, database_name, query_encrypted, query_hash, query_type, affected_rows, duration_ms, result) VALUES (?, ?, ?, NULL, ?, ?, ?, ?, ?)', [$userId, $accountId, $databaseName, hash('sha256', $sql), $analysis['type'], $affected, $duration, $result]);
     }
 
     private function setTimeout(PDO $pdo, int $seconds): void

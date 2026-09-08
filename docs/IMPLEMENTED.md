@@ -66,8 +66,8 @@ This inventory names the operational code paths delivered by the project. The on
 - Provider-aware direct MySQL connection automation using a generated least-scope database user and encrypted connection material.
 - Table listing and structure; create/rename table; add/change/drop columns; add/drop indexes; optimize, repair, truncate, and drop operations.
 - Row browsing with selected columns, stable pagination, filters/operators, order, row details, insert/update/delete, bulk delete, and CSV export.
-- SQL classification for read/write/destructive/admin statements; one-statement enforcement, comment/string-aware parsing, result and timeout limits.
-- SQL preview/analyze, execution, `EXPLAIN`, optional automatic backup for dangerous statements, target-bound confirmation, history, and saved queries.
+- SQL classification for read/write/destructive/admin statements; one-statement enforcement, comment/string-aware parsing, 100-row read-only result pages, a 200-row page ceiling, a 2 MiB response cap, and statement timeout.
+- SQL preview/analyze, execution, `EXPLAIN`, optional automatic backup for dangerous statements, target-bound confirmation, optional secret-safe fingerprint/type/result history, and explicitly saved encrypted queries. Migration 012 removes any legacy full query text from history.
 - Queue-backed `.sql`/`.sql.gz` import and SQL/CSV export, managed staging, size constraints, checksum validation, streaming parser/writer, downloadable result, and pre-import backup.
 
 ## cPanel hosting tools
@@ -118,4 +118,4 @@ This inventory names the operational code paths delivered by the project. The on
 
 ## Measured repository contracts
 
-The current static verifier checks at least 152 API routes, 128 rendered Mini App action names, 133 handlers, translation parity, 78 contextual topics, 11 migrations, required tables, queue/deployment/backup state contracts, official API compatibility policy, and absence of unfinished markers or token/private-key-shaped values in production files. Exact executed results are recorded in [TESTED.md](TESTED.md).
+The current static verifier checks at least 152 API routes, 128 rendered Mini App action names, 133 handlers, translation parity, 78 contextual topics, 12 migrations, required tables, queue/deployment/backup state contracts, official API compatibility policy, and absence of unfinished markers or token/private-key-shaped values in production files. Exact executed results are recorded in [TESTED.md](TESTED.md).

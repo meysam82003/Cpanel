@@ -63,6 +63,8 @@ Verified release-readiness run:
 - Every client `hostPath()` candidate matches an actual `/api/v1/` backend route.
 - API method/path registrations are unique and meet the expected surface size.
 - Every `/api/v1/` response passes through the central audit hook, which records only a route template and safe metadata and excludes body/query data.
+- SQL page/per-page inputs reach a bounded read-only result pager; mutating queries cannot request later pages, result bytes remain capped, and later pages do not duplicate history or backups.
+- SQL history is optional and contains only fingerprint/type/result/timing metadata; migration 012 scrubs legacy encrypted query text while explicitly saved queries remain encrypted.
 - Installer input controls are exactly the required five, with no extra select/textarea.
 - Required tables, migrations, queue leases, prepared downloads, upload/archive/deployment/backup recovery state exist.
 - Deployment and Backup UI actions connect to their queue/state backend contracts.
@@ -82,7 +84,7 @@ translations_per_language: 517
 bot_translations_per_language: 114
 used_translation_keys: 336
 help_topics: 78
-migrations: 11
+migrations: 12
 failures: 0
 ```
 

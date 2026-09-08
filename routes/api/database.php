@@ -217,6 +217,8 @@ return static function (ApiKernel $api, Container $container): void {
         $accountId = (int) $params['account'];
         $database = (string) $params['database'];
         $query = (string) $request->input('sql', '');
+        $page = (int) $request->input('page', 1);
+        $perPage = (int) $request->input('per_page', 100);
         $plans->feature($userId, 'sql_console');
         $analysis = $analyzer->analyze($query);
         $confirmed = false;
@@ -224,10 +226,14 @@ return static function (ApiKernel $api, Container $container): void {
             $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'sql.execute', hash('sha256', $query));
             $confirmed = true;
         }
-        if (filter_var($request->input('backup_first', false), FILTER_VALIDATE_BOOL)) {
+        $backupFirst = filter_var($request->input('backup_first', false), FILTER_VALIDATE_BOOL);
+        if ($page > 1 && $backupFirst) {
+            throw new AppException('A backup can be requested only for the first SQL result page.', 422, 'sql_pagination_backup_invalid', [], 'database.sql');
+        }
+        if ($backupFirst) {
             return $sqlCoordinator->backupAndExecute($userId, $accountId, $database, $query, $confirmed);
         }
-        return $sql->execute($userId, $accountId, $database, $query, $confirmed, filter_var($request->input('save_history', true), FILTER_VALIDATE_BOOL));
+        return $sql->execute($userId, $accountId, $database, $query, $confirmed, $page === 1 && filter_var($request->input('save_history', true), FILTER_VALIDATE_BOOL), $page, $perPage);
     }, 30);
     $api->route('POST', '/api/v1/hosts/{account}/databases/{database}/sql/explain', static fn (Request $request, array $params, array $session): array => $sql->explain((int) $session['user_id'], (int) $params['account'], (string) $params['database'], (string) $request->input('sql', '')), 30);
     $api->route('GET', '/api/v1/hosts/{account}/sql/history', static fn (Request $request, array $params, array $session): array => ['history' => $sql->history((int) $session['user_id'], (int) $params['account'], (int) $request->input('limit', 50))]);

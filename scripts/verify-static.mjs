@@ -107,6 +107,12 @@ assert(read('app/Queue/CleanupService.php').includes("'user_sessions'"), 'Expire
 assert(read('app/Core/Container.php').includes("'file.download' => new FileDownloadJobHandler"), 'Prepared downloads are not connected to the queue worker.');
 assert(read('app/FileManager/DownloadService.php').includes("status = 'ready'") && read('app/FileManager/DownloadService.php').includes('download_integrity_failed'), 'Secure downloads are not prepared and integrity-checked before serving.');
 assert(read('app/FileManager/FileDownloadJobHandler.php').includes("'sendDocument'") && read('app/FileManager/FileDownloadJobHandler.php').includes("'secure_link'"), 'Queued downloads do not provide real Telegram and secure-link delivery paths.');
+const sqlConsole = read('app/Database/SqlConsoleService.php');
+const databaseRoutes = read('routes/api/database.php');
+assert(sqlConsole.includes("'pagination' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore]") && sqlConsole.includes("if ($page > 1 && !$analysis['read_only'])"), 'SQL result pagination is missing or can replay a mutating query page.');
+assert(databaseRoutes.includes("$request->input('page', 1)") && databaseRoutes.includes("$request->input('per_page', 100)") && appSource.includes("'sql-page': () => this.executeSql(Number(data.page))"), 'SQL pagination is not wired end to end.');
+assert(sqlConsole.includes('query_encrypted, query_hash') && !sqlConsole.includes('UPDATE sql_history SET query_encrypted') && read('database/migrations/012_sql_history_privacy.sql').includes('SET query_encrypted = NULL'), 'SQL history can retain full query text instead of secret-safe metadata.');
+assert(appSource.includes('id="sql-history"') && appSource.includes("save_history: page === 1"), 'Optional SQL history control is not wired to the API.');
 assert(schema.includes('CREATE TABLE IF NOT EXISTS telegram_file_uploads'), 'Telegram upload retry state is not persisted.');
 assert(read('app/Core/Container.php').includes("'telegram.file_upload' => new TelegramFileUploadJobHandler"), 'Telegram uploads are not connected to the queue worker.');
 const telegramUpload = read('app/FileManager/TelegramFileUploadJobHandler.php');
