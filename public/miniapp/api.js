@@ -1,3 +1,18 @@
+function detectAppBasePath() {
+  const pathname = String(window.location.pathname || '/');
+  const marker = '/miniapp';
+  const index = pathname.indexOf(marker);
+  if (index <= 0) return '';
+  return pathname.slice(0, index).replace(/\/+$/, '');
+}
+
+const APP_BASE_PATH = detectAppBasePath();
+
+function resolveAppPath(path) {
+  if (typeof path !== 'string' || !path.startsWith('/')) return path;
+  return `${APP_BASE_PATH}${path}` || path;
+}
+
 export class ApiError extends Error {
   constructor(error = {}, status = 500) {
     super(error.message || error.message_en || 'Request failed');
@@ -60,7 +75,7 @@ export class Api {
       headers.set('Content-Type', 'application/json');
       body = JSON.stringify(options.body);
     }
-    const response = await fetch(path, {method, headers, body, signal: options.signal, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
+    const response = await fetch(resolveAppPath(path), {method, headers, body, signal: options.signal, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
     const payload = await this.parse(response);
     if (!response.ok || payload?.ok === false) {
       const error = new ApiError(payload?.error || {}, response.status);
@@ -74,7 +89,7 @@ export class Api {
     this.assertPath(path);
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', path, true);
+      xhr.open('POST', resolveAppPath(path), true);
       xhr.responseType = 'json';
       xhr.setRequestHeader('Accept', 'application/json');
       xhr.setRequestHeader('Authorization', `Bearer ${this.token}`);
@@ -100,7 +115,7 @@ export class Api {
 
   async download(path, filename = 'download.bin') {
     this.assertPath(path);
-    const response = await fetch(path, {headers: {'Authorization': `Bearer ${this.token}`, 'Accept': '*/*'}, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
+    const response = await fetch(resolveAppPath(path), {headers: {'Authorization': `Bearer ${this.token}`, 'Accept': '*/*'}, credentials: 'same-origin', redirect: 'error', cache: 'no-store'});
     if (!response.ok) {
       const payload = await this.parse(response);
       throw new ApiError(payload?.error || {}, response.status);
