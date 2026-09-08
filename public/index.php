@@ -21,16 +21,23 @@ if (($_SERVER['HTTPS'] ?? '') === 'on' || ($_SERVER['SERVER_PORT'] ?? '') === '4
 }
 
 try {
-    $request = Request::capture();
-    if (!is_file($root . '/storage/installed.lock') || !is_file($root . '/.env')) {
+    $installed = is_file($root . '/storage/installed.lock') && is_file($root . '/.env');
+    if ($installed) {
+        Env::load($root . '/.env');
+        date_default_timezone_set((string) (Env::get('APP_TIMEZONE', 'UTC') ?: 'UTC'));
+        $request = Request::capture((string) (Env::get('APP_URL', '') ?: ''));
+    } else {
+        $request = Request::capture();
+    }
+
+    if (!$installed) {
         if ($request->method === 'GET' && !str_starts_with($request->path, '/api/') && !str_starts_with($request->path, '/webhook/')) {
             header('Location: install', true, 302);
             exit;
         }
         Response::json(['ok' => false, 'error' => ['code' => 'not_installed', 'message_fa' => 'ابتدا نصب‌کننده وب را اجرا کنید.', 'message_en' => 'Run the web installer first.']], 503)->send();
     }
-    Env::load($root . '/.env');
-    date_default_timezone_set((string) (Env::get('APP_TIMEZONE', 'UTC') ?: 'UTC'));
+
     (new Application(new Container($root)))->handle($request)->send();
 } catch (AppException $exception) {
     Response::json(['ok' => false, 'error' => ['code' => $exception->safeCode, 'message' => $exception->getMessage(), 'message_fa' => 'درخواست کامل نشد. ورودی و راهنمای صفحه را بررسی کنید.', 'message_en' => 'The request could not be completed. Check the input and contextual help.', 'request_id' => bin2hex(random_bytes(16))]], $exception->httpStatus)->send();
