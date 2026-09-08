@@ -45,6 +45,11 @@ const routes = [...routeSources.matchAll(/\$api->(?:route|publicRoute)\(\s*'([A-
 const routeKeys = routes.map(route => `${route.method} ${route.path}`);
 assert(routes.length >= 140, `Expected at least 140 API routes, found ${routes.length}.`);
 assert(new Set(routeKeys).size === routeKeys.length, 'Duplicate API method/path registrations exist.');
+const applicationSource = read('app/Http/Application.php');
+assert(applicationSource.includes("str_starts_with($request->path, '/api/v1/')") && applicationSource.includes("'api.request'") && applicationSource.includes('$this->safeRoute($request)') && applicationSource.includes('$request->ip') && applicationSource.includes('$requestId'), 'Every versioned API response is not covered by the central safe audit trail.');
+const apiAuditBlock = applicationSource.match(/private function recordApiAudit[\s\S]*?\n    }\n\n    private function/)?.[0] || '';
+assert(apiAuditBlock !== '' && !apiAuditBlock.includes('$request->body') && !apiAuditBlock.includes('$request->query'), 'Central API audit captures request body or query data.');
+assert(read('app/Audit/AuditLogger.php').includes("['api.request', 'file.browse', 'host.health']"), 'High-volume API audit events pollute user recent actions.');
 const routeRegexes = routes.map(route => new RegExp(`^${route.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '[^/]+')}/?$`));
 const hasRoute = candidate => routeRegexes.some(regex => regex.test(candidate.replace(/\?.*$/, '')));
 const hostSuffixes = new Set([...appSource.matchAll(/hostPath\(\s*['"]([^'"]*)['"]/g)].map(match => `/api/v1/hosts/1${match[1]}`));

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http;
 
+use App\Audit\AuditLogger;
 use App\Core\AppException;
 use App\Core\Config;
 use App\Core\Container;
@@ -20,6 +21,7 @@ use App\Telegram\BotHandler;
 final class Application
 {
     private readonly ApiKernel $api;
+    private readonly AuditLogger $audit;
     private readonly Database $database;
     private readonly Logger $logger;
     private readonly ErrorGuidanceService $guidance;
@@ -27,6 +29,7 @@ final class Application
     public function __construct(private readonly Container $container)
     {
         $this->database = $container->get(Database::class);
+        $this->audit = $container->get(AuditLogger::class);
         $this->logger = $container->get(Logger::class);
         $this->guidance = $container->get(ErrorGuidanceService::class);
         $this->api = new ApiKernel(
@@ -59,7 +62,9 @@ final class Application
             $response = $this->errorResponse(new AppException('The server could not complete this request.', 500, 'internal_error'), $requestId);
         }
 
-        $this->recordMetric($request, $response->status, (int) round((microtime(true) - $started) * 1000));
+        $duration = (int) round((microtime(true) - $started) * 1000);
+        $this->recordMetric($request, $response->status, $duration);
+        $this->recordApiAudit($request, $response, $duration, $requestId);
         return $response;
     }
 
@@ -154,6 +159,32 @@ final class Application
         try {
             $this->database->execute('INSERT INTO api_request_metrics (route, method, status_code, duration_ms, user_id) VALUES (?, ?, ?, ?, ?)', [$this->safeRoute($request), $request->method, $status, max(0, $duration), $this->api->currentUserId()]);
         } catch (\Throwable) {
+        }
+    }
+
+    private function recordApiAudit(Request $request, Response $response, int $duration, string $requestId): void
+    {
+        if (!str_starts_with($request->path, '/api/v1/')) {
+            return;
+        }
+        try {
+            $this->audit->record(
+                $this->api->currentUserId(),
+                null,
+                'api.request',
+                $response->status < 400 ? 'success' : 'failed',
+                'route',
+                $this->safeRoute($request),
+                [
+                    'method' => $request->method,
+                    'status_code' => $response->status,
+                    'duration_ms' => max(0, $duration),
+                ],
+                $request->ip,
+                $requestId,
+            );
+        } catch (\Throwable) {
+            // Audit availability must never replace the endpoint's safe response.
         }
     }
 

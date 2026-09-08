@@ -32,7 +32,7 @@ final class AuditLogger
             'INSERT INTO audit_logs (user_id, account_id, action, target_type, target_ref, result, request_id, ip_address, metadata_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
             [$userId, $accountId, $action, $targetType, $safeTarget, $result, $requestId, $packedIp, json_encode($safeMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]
         );
-        if ($userId !== null && $result === 'success' && !in_array($action, ['file.browse', 'host.health'], true)) {
+        if ($userId !== null && $result === 'success' && !in_array($action, ['api.request', 'file.browse', 'host.health'], true)) {
             $this->database->execute(
                 'INSERT INTO recent_actions (user_id, account_id, action, resource_type, resource_ref, metadata_json) VALUES (?, ?, ?, ?, ?, ?)',
                 [$userId, $accountId, $action, $targetType, $safeTarget, json_encode($safeMetadata, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)]

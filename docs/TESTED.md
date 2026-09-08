@@ -62,6 +62,7 @@ Verified release-readiness run:
 - Every rendered Mini App `data-action` has a registered handler.
 - Every client `hostPath()` candidate matches an actual `/api/v1/` backend route.
 - API method/path registrations are unique and meet the expected surface size.
+- Every `/api/v1/` response passes through the central audit hook, which records only a route template and safe metadata and excludes body/query data.
 - Installer input controls are exactly the required five, with no extra select/textarea.
 - Required tables, migrations, queue leases, prepared downloads, upload/archive/deployment/backup recovery state exist.
 - Deployment and Backup UI actions connect to their queue/state backend contracts.

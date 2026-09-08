@@ -65,7 +65,7 @@ The health-check service uses an independent validator restricted to public HTTP
 
 ## Audit and alert behavior
 
-Audit entries contain actor, account, action, target, safe result, request identifier and masked metadata. Security events record a non-secret fingerprint and safe request metadata. Rate-limit, SSRF, session/initData, callback, ownership and authentication anomalies trigger security-event handling; high-signal notifications to active super admins are deduplicated over a short window.
+Audit entries contain actor, account, action, target, safe result, request identifier and masked metadata. A fail-safe central hook covers every `/api/v1/` response with its route template, method, status, duration and validated IP; it never records request bodies or query values. Security events record a non-secret fingerprint and safe request metadata. Rate-limit, SSRF, session/initData, callback, ownership and authentication anomalies trigger security-event handling; high-signal notifications to active super admins are deduplicated over a short window.
 
 Security Center exposes only the current tenant's hosts, failed-token count, suspicious-event count, destructive actions, sessions and alerts. Admin Security/Audit offers service-wide inspection without decrypted tokens.
 
