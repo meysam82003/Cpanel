@@ -135,8 +135,26 @@ for (const key of ['deployStepPackage', 'deployStepDestination', 'deployStepVali
   assert(Object.hasOwn(dictionaries.fa, key) && Object.hasOwn(dictionaries.en, key), `Deployment wizard step is not bilingual: ${key}`);
 }
 assert(appSource.includes('deploymentWizardMarkup(') && appSource.includes('pollDeployment(') && appSource.includes('result.current_versions') && appSource.includes('result.rollback_points'), 'Mini App Deployment Center is missing its real eight-step state timeline or release overview.');
+assert(!appSource.includes("requireCapability(['files', 'backup'], 'deployCenter')"), 'Deployment Center is incorrectly disabled when the unrelated Full Backup capability is absent.');
 assert(!appSource.includes('escapeHtml(event.message_key)'), 'Mini App renders an untranslated deployment event key.');
 assert(read('public/miniapp/index.html').includes('/miniapp/deployment.css'), 'Deployment Center responsive styling is not loaded.');
+
+const backupService = read('app/Backup/BackupService.php');
+const backupTracker = read('app/Backup/BackupJobTracker.php');
+const sqlTransfers = read('app/Database/SqlTransferService.php');
+assert(containerSource.includes('BackupJobTracker::class') && read('app/Queue/QueueWorker.php').includes('trackBackupCompletion(') && read('app/Queue/QueueWorker.php').includes('trackBackupFailure('), 'Backup records are not reconciled with durable queue completion and failure.');
+assert(backupService.includes("'file_backups'") && backupService.includes("'database_backups'") && backupService.includes("'deployment_backups'") && backupService.includes("'full_backups'"), 'Backup inventory is not grouped by recoverable artifact type.');
+assert(backupService.includes('restoreFileVersion(') && backupService.includes('importBackup(') && backupService.includes('->enqueueExtract(') && backupService.includes('->rollback('), 'One or more file, database, directory, or deployment restore paths are not operational.');
+assert(backupService.includes("in_array((string) $backup['status'], ['queued', 'processing', 'requested'], true)") && backupService.includes('assertBackupNotRestoring('), 'Active backup or restore artifacts can be deleted without conflict protection.');
+assert(backupTracker.includes("provider_ref LIKE 'job:%'") && backupTracker.includes('user_id = ? AND account_id = ?'), 'Backup queue reconciliation is not owner-bound.');
+assert(sqlTransfers.includes('storedBackupPath(') && sqlTransfers.includes('hash_equals($expectedSha256, $actualSha256)') && sqlTransfers.includes("fopen($temporary, 'xb')") && sqlTransfers.includes("'backup_first' => $backupFirst"), 'Database restore lacks managed-root staging, checksum verification, exclusive creation, or pre-import backup.');
+for (const routeContract of ['/backups/file/{version}/restore', '/backups/file/{version}/download', '/backups/file/{version}']) {
+  assert(deploymentRoutes.includes(routeContract), `File-version backup API route is missing: ${routeContract}`);
+}
+assert((deploymentRoutes.match(/feature\(\(int\) \$session\['user_id'\], 'backup_enabled'\)/g) || []).length >= 9, 'Backup feature policy is not enforced on every backup API operation.');
+for (const action of ['backup-refresh', 'backup-progress', 'backup-download', 'backup-restore', 'backup-delete']) assert(handlers.has(action), `Backup Center action is not connected: ${action}`);
+assert(appSource.includes('pollJob(Number(result.job_id), false)') && appSource.includes('pollDeployment(Number(result.job_id), Number(result.deployment_id), true)'), 'Backup Center does not track queued restore/backup and deployment rollback progress.');
+assert(read('public/miniapp/index.html').includes('/miniapp/backup.css'), 'Backup Center responsive styling is not loaded.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {
@@ -161,6 +179,7 @@ assert(cpanelSources.includes("'directive-' . $position") && cpanelSources.inclu
 assert(cpanelSources.includes("'api.paginate.enable'") && cpanelSources.includes("'api.paginate.start'"), 'UAPI server-side pagination controls are missing.');
 assert(cpanelSources.includes('isOperationUnavailable') && cpanelSources.includes('api2_compatibility'), 'Version-aware cPanel API compatibility policy is missing.');
 assert(read('app/Cpanel/UapiClient.php').includes('$idempotent ? $validated[\'ips\'] : array_slice($validated[\'ips\'], 0, 1)'), 'Non-idempotent cPanel API 2 calls are not protected from multi-IP replay.');
+assert(read('app/Cpanel/UapiClient.php').includes("$candidateIps = $idempotent ? $validated['ips'] : array_slice($validated['ips'], 0, 1)"), 'Non-idempotent cPanel UAPI calls are not protected from multi-IP replay.');
 assert(read('app/FileManager/FileManagerService.php').includes("'op' => 'extract'") && read('app/FileManager/FileManagerService.php').includes("'doubledecode' => 0], false"), 'Archive mutations do not explicitly disable provider-call replay.');
 
 const helpSource = read('resources/help/topics.php');

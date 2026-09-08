@@ -220,20 +220,21 @@ class ManagerApp {
     return false;
   }
   routeCapabilities(route) {
-    return {files: ['files'], editor: ['files'], databases: ['mysql'], database: ['mysql'], table: ['mysql'], sql: ['mysql'], domains: ['domains'], email: ['email'], ssl: ['ssl'], cron: ['cron'], backups: ['backup'], deploy: ['files', 'backup'], usage: ['usage'], logs: ['files'], php: ['php']}[route] || [];
+    return {files: ['files'], editor: ['files'], databases: ['mysql'], database: ['mysql'], table: ['mysql'], sql: ['mysql'], domains: ['domains'], email: ['email'], ssl: ['ssl'], cron: ['cron'], backups: [], deploy: ['files'], usage: ['usage'], logs: ['files'], php: ['php']}[route] || [];
   }
-  mutationCapabilities(action) {
+  mutationCapabilities(action, dataset = {}) {
+    if (dataset.capability) return String(dataset.capability).split(',').map(value => value.trim()).filter(Boolean);
     const groups = {
-      files: new Set(['file-upload-picker', 'file-create', 'folder-create', 'file-move', 'file-copy', 'file-delete', 'file-extract', 'file-restore-trash', 'trash-empty', 'files-archive-selected', 'files-delete-selected', 'files-move-selected', 'editor-save', 'editor-save-as', 'editor-restore-version']),
-      mysql: new Set(['database-create', 'database-delete', 'database-connect', 'database-import', 'db-user-create', 'db-user-password', 'db-user-delete', 'db-remote-add', 'db-remote-delete', 'table-create', 'table-operation', 'column-add', 'column-edit', 'column-delete', 'index-add', 'index-delete', 'row-insert', 'row-edit', 'row-delete', 'row-bulk-delete', 'sql-execute', 'sql-save-query', 'sql-delete-saved']),
+      files: new Set(['file-upload-picker', 'file-create', 'folder-create', 'file-move', 'file-copy', 'file-delete', 'file-extract', 'file-restore-trash', 'trash-empty', 'files-archive-selected', 'files-delete-selected', 'files-move-selected', 'editor-save', 'editor-save-as', 'editor-restore-version', 'backup-directory']),
+      mysql: new Set(['database-create', 'database-delete', 'database-connect', 'database-import', 'db-user-create', 'db-user-password', 'db-user-delete', 'db-remote-add', 'db-remote-delete', 'table-create', 'table-operation', 'column-add', 'column-edit', 'column-delete', 'index-add', 'index-delete', 'row-insert', 'row-edit', 'row-delete', 'row-bulk-delete', 'sql-execute', 'sql-save-query', 'sql-delete-saved', 'backup-database']),
       domains: new Set(['domain-create', 'domain-delete', 'domain-dns', 'subdomain-create', 'subdomain-delete', 'redirect-create', 'redirect-delete']),
       email: new Set(['email-create', 'email-password', 'email-quota', 'email-delete', 'forwarder-create', 'forwarder-delete', 'autoresponder-create', 'autoresponder-edit', 'autoresponder-delete']),
       ssl: new Set(['ssl-autossl']),
       cron: new Set(['cron-create', 'cron-edit', 'cron-toggle', 'cron-delete']),
-      backup: new Set(['backup-full', 'backup-database', 'backup-directory', 'backup-restore', 'backup-delete']),
+      backup: new Set(['backup-full']),
       php: new Set(['php-version', 'php-ini']),
     };
-    if (['deployment-package', 'deployment-rollback'].includes(action)) return ['files', 'backup'];
+    if (['deployment-package', 'deployment-rollback'].includes(action)) return ['files'];
     for (const [capability, actions] of Object.entries(groups)) if (actions.has(action)) return [capability];
     return [];
   }
@@ -247,7 +248,7 @@ class ManagerApp {
   }
   applyCapabilityPolicy(root) {
     $$('[data-action]', root).forEach(element => {
-      const required = this.mutationCapabilities(element.dataset.action);
+      const required = this.mutationCapabilities(element.dataset.action, element.dataset);
       const blocked = required.some(name => { const capability = this.capability(name); return capability && (!capability.available || !capability.writable); });
       if (!blocked) return;
       element.disabled = true;
@@ -651,16 +652,64 @@ class ManagerApp {
   }
 
   async pageBackups() {
-    if (!this.requireHost() || !this.requireCapability('backup', 'backups')) return;
+    if (!this.requireHost()) return;
     this.loading('backups');
     const result = await this.api.request(this.hostPath('/backups'));
-    this.backupItems = result.managed || [];
-    const rows = this.backupItems.map(item => `<article class="list-row"><span class="file-icon">💾</span><div class="grow"><strong>${escapeHtml(String(item.type))}: ${escapeHtml(String(item.target))}</strong><small>${escapeHtml(statusText(item.status))} · ${escapeHtml(bytes(item.size_bytes))} · ${escapeHtml(dateText(item.created_at))}</small></div><div class="row-actions"><button class="button secondary small" data-action="backup-download" data-id="${Number(item.id)}" ${item.status !== 'completed' ? 'disabled' : ''}>${escapeHtml(t('download'))}</button>${item.type === 'directory' ? `<button class="button warning small" data-action="backup-restore" data-id="${Number(item.id)}">${escapeHtml(t('restore'))}</button>` : ''}<button class="button danger small" data-action="backup-delete" data-id="${Number(item.id)}">${escapeHtml(t('remove'))}</button></div></article>`).join('');
-    this.content.innerHTML = `${this.pageHead('backups')}<div class="toolbar"><button class="button" data-action="backup-full">${escapeHtml(t('fullBackup'))}</button><button class="button secondary" data-action="backup-database">${escapeHtml(t('databaseBackup'))}</button><button class="button secondary" data-action="backup-directory">${escapeHtml(t('directoryBackup'))}</button></div>${rows ? `<div class="list">${rows}</div>` : `<section class="empty-state card"><h2>${escapeHtml(t('noBackupsTitle'))}</h2><p>${escapeHtml(t('noBackupsBody'))}</p><button class="button" data-action="backup-full">${escapeHtml(t('fullBackup'))}</button></section>`}`;
+    const managed = Array.isArray(result.managed) ? result.managed : [];
+    const fallback = {
+      file_backups: managed.filter(item => ['file', 'directory'].includes(item.type)),
+      database_backups: managed.filter(item => item.type === 'database'),
+      deployment_backups: managed.filter(item => item.type === 'deployment'),
+      full_backups: managed.filter(item => item.type === 'full'),
+    };
+    this.backupGroups = result.groups && typeof result.groups === 'object' ? result.groups : fallback;
+    this.backupItems = Object.values(this.backupGroups).flat().filter((item, index, items) => items.findIndex(candidate => candidate.key === item.key) === index);
+    const section = (titleKey, groupKey, emptyKey) => {
+      const items = Array.isArray(this.backupGroups[groupKey]) ? this.backupGroups[groupKey] : [];
+      return `<section class="backup-section" aria-labelledby="backup-${escapeAttr(groupKey)}"><div class="section-heading"><h2 id="backup-${escapeAttr(groupKey)}">${escapeHtml(t(titleKey))}</h2><span class="badge">${items.length}</span></div>${items.length ? `<div class="cards backup-grid">${items.map(item => this.backupCard(item)).join('')}</div>` : `<div class="card compact-empty"><p>${escapeHtml(t(emptyKey))}</p></div>`}</section>`;
+    };
+    const providerUnavailable = result.provider?.available === false || !this.hasCapability('backup');
+    const provider = providerUnavailable
+      ? `<div class="notice warning"><strong>${escapeHtml(t('providerBackups'))}</strong>${escapeHtml(t('providerBackupUnavailable'))}</div>`
+      : `<details class="advanced-only provider-backup-details"><summary>${escapeHtml(t('providerBackups'))}</summary><pre class="code">${escapeHtml(formatJson(result.provider || {}))}</pre></details>`;
+    const buttons = `<button class="button secondary" data-action="backup-refresh">↻ ${escapeHtml(t('refresh'))}</button>`;
+    this.content.innerHTML = `${this.pageHead('backups', '', buttons)}<div class="backup-actions"><button class="button" data-action="backup-full" data-capability="backup">${escapeHtml(t('fullBackup'))}</button><button class="button secondary" data-action="backup-database" data-capability="mysql">${escapeHtml(t('databaseBackup'))}</button><button class="button secondary" data-action="backup-directory" data-capability="files">${escapeHtml(t('directoryBackup'))}</button></div><div class="notice beginner-copy"><strong>${escapeHtml(t('info'))}</strong>${escapeHtml(t('noBackupsBody'))}</div>${provider}${section('fileBackups', 'file_backups', 'noFileBackups')}${section('databaseBackups', 'database_backups', 'noDatabaseBackups')}${section('deploymentBackups', 'deployment_backups', 'noDeploymentBackups')}${section('fullAccountBackups', 'full_backups', 'noFullBackups')}`;
+    this.applyCapabilityPolicy(this.content);
+  }
+
+  backupTypeText(type) {
+    return t({file: 'file', directory: 'directory', database: 'database', deployment: 'deploy', full: 'fullBackup'}[type] || 'backups');
+  }
+
+  backupItem(kind, id) {
+    return this.backupItems.find(item => String(item.record_kind || 'managed') === String(kind || 'managed') && Number(item.record_id ?? item.id) === Number(id));
+  }
+
+  backupReasonText(reason) {
+    const key = {editor_save: 'reasonEditorSave', before_version_restore: 'reasonBeforeVersionRestore', before_sql_import: 'reasonBeforeSqlImport', before_destructive_sql: 'reasonBeforeDestructiveSql'}[String(reason || '')];
+    return key ? t(key) : String(reason || '');
+  }
+
+  backupCard(item) {
+    const kind = String(item.record_kind || 'managed');
+    const id = Number(item.record_id ?? item.id);
+    const actions = item.actions && typeof item.actions === 'object' ? item.actions : {};
+    const active = ['queued', 'processing', 'requested', 'running'].includes(String(item.status));
+    const restoreCapability = {file: 'files', directory: 'files', database: 'mysql', deployment: 'files'}[actions.restore_kind] || '';
+    const metadata = item.metadata && typeof item.metadata === 'object' ? item.metadata : {};
+    const version = item.type === 'file' ? `<dt>${escapeHtml(t('backupVersion'))}</dt><dd>#${Number(metadata.version_number || 0)}</dd>` : '';
+    const reason = metadata.reason ? `<dt>${escapeHtml(t('backupReason'))}</dt><dd>${escapeHtml(this.backupReasonText(metadata.reason))}</dd>` : '';
+    const job = item.job_id ? `<dt>${escapeHtml(t('backupJob'))}</dt><dd>#${Number(item.job_id)}</dd>` : '';
+    const error = item.status === 'failed' && metadata.error_code ? `<dt>${escapeHtml(t('errorCode'))}</dt><dd dir="ltr">${escapeHtml(String(metadata.error_code))}</dd>` : '';
+    const progress = active && item.job_id ? `<button class="button secondary small" data-action="backup-progress" data-job="${Number(item.job_id)}">${escapeHtml(t('trackProgress'))}</button>` : '';
+    const download = actions.download ? `<button class="button secondary small" data-action="backup-download" data-kind="${escapeAttr(kind)}" data-id="${id}">${escapeHtml(t('download'))}</button>` : '';
+    const restore = actions.restore ? `<button class="button warning small" data-action="backup-restore" data-kind="${escapeAttr(kind)}" data-id="${id}" ${restoreCapability ? `data-capability="${escapeAttr(restoreCapability)}"` : ''}>${escapeHtml(t('restore'))}</button>` : '';
+    const remove = actions.delete ? `<button class="button danger small" data-action="backup-delete" data-kind="${escapeAttr(kind)}" data-id="${id}">${escapeHtml(t('remove'))}</button>` : '';
+    return `<article class="card backup-card ${active ? 'backup-active' : ''}" aria-busy="${active ? 'true' : 'false'}"><div class="page-head"><div><h3>${escapeHtml(this.backupTypeText(item.type))}</h3><span class="badge ${item.status === 'completed' ? 'ok' : item.status === 'failed' ? 'error' : 'warning'}">${escapeHtml(statusText(item.status))}</span></div><small>${kind === 'file_version' ? `v${Number(metadata.version_number || 0)}` : `#${id}`}</small></div><dl class="key-values"><dt>${escapeHtml(t('target'))}</dt><dd dir="ltr">${escapeHtml(item.target || '—')}</dd><dt>${escapeHtml(t('backupSize'))}</dt><dd>${escapeHtml(item.size_bytes === null || item.size_bytes === undefined ? '—' : bytes(item.size_bytes))}</dd><dt>${escapeHtml(t('createdAt'))}</dt><dd>${escapeHtml(dateText(item.completed_at || item.created_at))}</dd>${version}${reason}${job}${error}</dl><div class="row-actions">${progress}${download}${restore}${remove}</div></article>`;
   }
 
   async pageDeploy() {
-    if (!this.requireHost() || !this.requireCapability(['files', 'backup'], 'deployCenter')) return;
+    if (!this.requireHost() || !this.requireCapability('files', 'deployCenter')) return;
     this.loading('deployCenter');
     const result = await this.api.request(this.hostPath('/deployments'));
     this.deploymentOverview = result;
@@ -837,14 +886,15 @@ class ManagerApp {
       'email-create': () => this.createEmail(), 'email-password': () => this.changeEmailPassword(data.email), 'email-quota': () => this.changeEmailQuota(data.email), 'email-delete': () => this.deleteEmail(data.email), 'forwarder-create': () => this.createForwarder(), 'forwarder-delete': () => this.deleteForwarder(data.source, data.destination), 'autoresponder-create': () => this.autoresponderDialog(), 'autoresponder-edit': () => this.autoresponderDialog(this.autoresponders[Number(data.index)]), 'autoresponder-delete': () => this.deleteAutoresponder(data.email),
       'ssl-autossl': () => this.runAutoSsl(), 'ssl-inspect': () => this.inspectSsl(data.domain),
       'cron-create': () => this.cronDialog(), 'cron-edit': () => this.cronDialog(this.cronJobs[Number(data.index)], data.line), 'cron-toggle': () => this.toggleCron(this.cronJobs[Number(data.index)], data.line, data.enabled === '1'), 'cron-delete': () => this.deleteCron(this.cronJobs[Number(data.index)], Number(data.line)),
-      'backup-full': () => this.fullBackup(), 'backup-database': () => this.databaseBackup(), 'backup-directory': () => this.directoryBackup(), 'backup-download': () => this.downloadBackup(Number(data.id)), 'backup-restore': () => this.restoreBackup(Number(data.id)), 'backup-delete': () => this.deleteBackup(Number(data.id)),
+      'backup-refresh': () => this.pageBackups(), 'backup-progress': () => this.followBackupJob(Number(data.job)),
+      'backup-full': () => this.fullBackup(), 'backup-database': () => this.databaseBackup(), 'backup-directory': () => this.directoryBackup(), 'backup-download': () => this.downloadBackup(data.kind, Number(data.id)), 'backup-restore': () => this.restoreBackup(data.kind, Number(data.id)), 'backup-delete': () => this.deleteBackup(data.kind, Number(data.id)),
       'deployment-package': () => this.deploymentPackage(), 'deployment-details': () => this.deploymentDetails(Number(data.id)), 'deployment-rollback': () => this.rollbackDeployment(Number(data.id)),
       'log-open': () => this.openLog(data.path), 'log-custom': () => this.customLog(), 'php-version': () => this.changePhpVersion(), 'php-ini': () => this.changePhpIni(),
       'session-revoke': () => this.revokeSession(Number(data.id)), 'security-ack': () => this.ackSecurity(Number(data.id)), 'settings-language': () => this.changeLanguage(data.language), 'settings-mode': () => this.changeMode(data.mode), 'logout': () => this.logout(),
       'admin-user-status': () => this.adminUserStatus(Number(data.id), data.status), 'admin-user-plan': () => this.adminUserPlan(Number(data.id)), 'admin-plan-edit': () => this.adminPlanEdit(Number(data.index)), 'admin-broadcast': () => this.adminBroadcast(), 'admin-job-retry': () => this.adminRetryJob(Number(data.id)), 'show-json': () => this.showJson(this[data.store]?.[Number(data.index)]), 'job-download': () => this.api.download(`/api/v1/jobs/${Number(data.id)}/download`, 'export.sql.gz')
     };
     if (!handlers[action]) throw new Error(`${t('unsupportedAction')}: ${action}`);
-    this.assertWritableCapabilities(this.mutationCapabilities(action));
+    this.assertWritableCapabilities(this.mutationCapabilities(action, data));
     await handlers[action]();
   }
 
@@ -1124,12 +1174,139 @@ class ManagerApp {
   async toggleCron(item, line, enabled) { const existing = {minute: String(item.minute), hour: String(item.hour), day: String(item.day), month: String(item.month), weekday: String(item.weekday), command: String(item.command)}; await this.api.request(this.hostPath(`/cron/${line}/enabled`), {method: 'PATCH', body: {existing, enabled}}); await this.render(); }
   deleteCron(item, line) { const existing = {minute: String(item.minute), hour: String(item.hour), day: String(item.day), month: String(item.month), weekday: String(item.weekday), command: String(item.command)}; return this.confirmOperation({warningKey: 'warningCron', action: 'cron.delete', target: `cron:${line}`, summary: `${[item.minute,item.hour,item.day,item.month,item.weekday].join(' ')}\n${item.command}`, perform: async confirmation => { await this.api.request(this.hostPath(`/cron/${line}`), {method: 'DELETE', body: {existing, confirmation}}); await this.render(); }}); }
 
-  fullBackup() { return this.confirmClient('warningBackupRestore', t('fullBackup'), async () => { await this.api.request(this.hostPath('/backups/full'), {method: 'POST', body: {}}); await this.render(); }); }
-  databaseBackup() { this.openForm('databaseBackup', `<div class="field"><label>${escapeHtml(t('databaseName'))}</label><input name="database" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('tables'))}</label><input name="tables" dir="ltr"><span class="hint">${escapeHtml(t('commaTablesHint'))}</span></div><div id="job-progress"></div>`, 'create', async form => { const result = await this.api.request(this.hostPath('/backups/database'), {method: 'POST', body: {database: form.elements.database.value, tables: form.elements.tables.value.split(',').map(value => value.trim()).filter(Boolean)}}); await this.pollJob(result.job_id, true); }); }
-  directoryBackup() { const root = this.activeHost()?.root_path || '.'; this.openForm('directoryBackup', `<div class="field"><label>${escapeHtml(t('source'))}</label><input name="directory" value="${escapeAttr(root)}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" dir="ltr"><span class="hint">${escapeHtml(t('optionalBackupPath'))}</span></div>`, 'create', async form => { await this.api.request(this.hostPath('/backups/directory'), {method: 'POST', body: {directory: form.elements.directory.value, destination: form.elements.destination.value || null}}); this.closeDialog(); await this.render(); }); }
-  async downloadBackup(id) { const item = this.backupItems.find(backup => Number(backup.id) === id); if (String(item?.provider_ref || '').startsWith('local:')) { await this.api.download(this.hostPath(`/backups/${id}/download`), String(item.provider_ref).slice(6)); return; } const result = await this.api.request(this.hostPath(`/backups/${id}/download`)); if (result.download) await this.downloadWhenReady(result.download); }
-  restoreBackup(id) { const item = this.backupItems.find(backup => Number(backup.id) === id); this.openForm('restore', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningBackupRestore'))}</div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(item?.target || '')}" required dir="ltr"></div>`, 'restore', async form => { const destination = form.elements.destination.value, target = `${id}:${destination}`; const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.restore', target, preview: {backup_id: id, destination}}}); await this.api.request(this.hostPath(`/backups/${id}/restore`), {method: 'POST', body: {destination, confirmation: confirmation.nonce}}); this.closeDialog(); await this.render(); }, true); }
-  deleteBackup(id) { const item = this.backupItems.find(backup => Number(backup.id) === id); this.openForm('remove', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningFileDelete'))}</div><pre class="code">${escapeHtml(`${item?.type}: ${item?.target}`)}</pre><label class="check"><input name="delete_remote" type="checkbox">${escapeHtml(t('deleteRemoteArchive'))}</label>`, 'remove', async form => { const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.delete', target: String(id), preview: {delete_remote: form.elements.delete_remote.checked}}}); await this.api.request(this.hostPath(`/backups/${id}`), {method: 'DELETE', body: {delete_remote: form.elements.delete_remote.checked, confirmation: confirmation.nonce}}); this.closeDialog(); await this.render(); }, true); }
+  fullBackup() {
+    this.openForm('confirm', `<div class="notice warning"><strong>${escapeHtml(t('warning'))}</strong>${escapeHtml(t('warningFullBackup'))}</div><pre class="code">${escapeHtml(t('fullBackup'))}</pre>`, 'confirm', async () => {
+      const result = await this.api.request(this.hostPath('/backups/full'), {method: 'POST', body: {}});
+      this.closeDialog();
+      await this.pageBackups();
+      this.toast(t(result.ambiguous ? 'fullBackupAmbiguous' : result.pending ? 'fullBackupPending' : 'success'));
+      this.haptic(result.pending ? 'selection' : 'success');
+    });
+  }
+
+  databaseBackup() {
+    this.openForm('databaseBackup', `<div class="notice"><strong>${escapeHtml(t('info'))}</strong>${escapeHtml(t('backupLiveProgress'))}</div><div class="field"><label>${escapeHtml(t('databaseName'))}</label><input name="database" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('tables'))}</label><input name="tables" dir="ltr"><span class="hint">${escapeHtml(t('commaTablesHint'))}</span></div><div id="job-progress"></div>`, 'create', async form => {
+      const result = await this.api.request(this.hostPath('/backups/database'), {method: 'POST', body: {database: form.elements.database.value, tables: form.elements.tables.value.split(',').map(value => value.trim()).filter(Boolean)}});
+      $('#dialog-body').innerHTML = `<div class="notice"><strong>${escapeHtml(t('databaseBackup'))}</strong>${escapeHtml(t('backupLiveProgress'))}</div><div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`;
+      $('#dialog-actions').innerHTML = '';
+      this.dialogSubmit = null;
+      await this.pollJob(Number(result.job_id), false);
+      this.closeDialog();
+      await this.pageBackups();
+      this.toast(t('success'));
+    });
+  }
+
+  directoryBackup() {
+    const root = String(this.activeHost()?.root_path || '.').replace(/\/$/, '');
+    const suggested = root === '.' ? './public_html' : `${root}/public_html`;
+    this.openForm('directoryBackup', `<div class="notice"><strong>${escapeHtml(t('info'))}</strong>${escapeHtml(t('directoryBackupSourceHint'))}</div><div class="field"><label>${escapeHtml(t('source'))}</label><input name="directory" value="${escapeAttr(suggested)}" required dir="ltr"></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" dir="ltr"><span class="hint">${escapeHtml(t('optionalBackupPath'))}</span></div><div id="job-progress"></div>`, 'create', async form => {
+      const result = await this.api.request(this.hostPath('/backups/directory'), {method: 'POST', body: {directory: form.elements.directory.value, destination: form.elements.destination.value.trim() || null}});
+      $('#dialog-body').innerHTML = `<div class="notice"><strong>${escapeHtml(t('directoryBackup'))}</strong>${escapeHtml(t('backupLiveProgress'))}</div><div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`;
+      $('#dialog-actions').innerHTML = '';
+      this.dialogSubmit = null;
+      await this.pollJob(Number(result.job_id), false);
+      this.closeDialog();
+      await this.pageBackups();
+      this.toast(t('success'));
+    });
+  }
+
+  async followBackupJob(jobId) {
+    if (!Number.isInteger(jobId) || jobId < 1) throw new ApiError({code: 'invalid_job', message: t('failed')}, 422);
+    this.openInfo('trackProgress', `<div class="notice"><strong>${escapeHtml(t('info'))}</strong>${escapeHtml(t('backupLiveProgress'))}</div><div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`);
+    await this.pollJob(jobId, false);
+    this.closeDialog();
+    await this.pageBackups();
+    this.toast(t('success'));
+  }
+
+  async downloadBackup(kind, id) {
+    const item = this.backupItem(kind, id);
+    if (!item?.actions?.download) throw new ApiError({code: 'backup_download_unavailable', message: t('failed'), help_slug: 'backup.overview'}, 409);
+    if (kind === 'file_version') {
+      const result = await this.api.request(this.hostPath(`/backups/file/${id}/download`));
+      await this.downloadWhenReady(result.download);
+      return;
+    }
+    if (String(item.provider_ref || '').startsWith('local:')) {
+      await this.api.download(this.hostPath(`/backups/${id}/download`), String(item.provider_ref).slice(6));
+      return;
+    }
+    const result = await this.api.request(this.hostPath(`/backups/${id}/download`));
+    await this.downloadWhenReady(result.download);
+  }
+
+  restoreBackup(kind, id) {
+    const item = this.backupItem(kind, id);
+    if (!item?.actions?.restore) throw new ApiError({code: 'backup_not_restorable', message: t('failed'), help_slug: 'backup.overview'}, 409);
+    const restoreKind = String(item.actions.restore_kind || item.type || '');
+    const warningKey = {file: 'backupRestoreFileWarning', directory: 'backupRestoreDirectoryWarning', database: 'backupRestoreDatabaseWarning', deployment: 'backupRestoreDeploymentWarning'}[restoreKind] || 'warningBackupRestore';
+    if (kind === 'file_version') {
+      return this.confirmOperation({
+        warningKey,
+        action: 'backup.restore',
+        target: `file:${id}`,
+        summary: `${t('file')}: ${item.target}\n${t('backupVersion')}: #${Number(item.metadata?.version_number || 0)}`,
+        preview: {version_id: id, target: item.target},
+        perform: async confirmation => {
+          await this.api.request(this.hostPath(`/backups/file/${id}/restore`), {method: 'POST', body: {confirmation}});
+          await this.pageBackups();
+        },
+      });
+    }
+    if (restoreKind === 'deployment') {
+      return this.confirmOperation({
+        warningKey,
+        action: 'backup.restore',
+        target: `${id}:`,
+        summary: `${t('deploy')} #${Number(item.metadata?.deployment_id || 0)}\n${t('destination')}: ${item.target || '—'}`,
+        preview: {backup_id: id, deployment_id: Number(item.metadata?.deployment_id || 0)},
+        closeOnSuccess: false,
+        perform: async confirmation => {
+          this.dialogSubmit = null;
+          const result = await this.api.request(this.hostPath(`/backups/${id}/restore`), {method: 'POST', body: {destination: '', confirmation}});
+          $('#dialog-actions').innerHTML = '';
+          await this.pollDeployment(Number(result.job_id), Number(result.deployment_id), true);
+          await this.pageBackups();
+          return false;
+        },
+      });
+    }
+    const source = String(item.target || '');
+    const defaultDestination = restoreKind === 'directory' ? (source.replace(/\/+$/, '').replace(/\/[^/]+$/, '') || '/') : source;
+    const extra = restoreKind === 'database' ? `<div class="notice warning">${escapeHtml(t('backupRestorePreBackup'))}</div>` : '';
+    this.openForm('restore', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t(warningKey))}</div>${extra}<div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(defaultDestination)}" required dir="ltr"><span class="hint">${escapeHtml(t('restoreDestinationHint'))}</span></div>`, 'restore', async form => {
+      const destination = form.elements.destination.value.trim();
+      const target = `${id}:${destination}`;
+      const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.restore', target, preview: {backup_id: id, type: restoreKind, destination, pre_restore_backup: restoreKind === 'database'}}});
+      const result = await this.api.request(this.hostPath(`/backups/${id}/restore`), {method: 'POST', body: {destination, confirmation: confirmation.nonce}});
+      $('#dialog-body').innerHTML = `<div class="notice"><strong>${escapeHtml(t('restore'))}</strong>${escapeHtml(t('backupLiveProgress'))}</div><div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`;
+      $('#dialog-actions').innerHTML = '';
+      this.dialogSubmit = null;
+      await this.pollJob(Number(result.job_id), false);
+      this.closeDialog();
+      await this.pageBackups();
+      this.toast(t('success'));
+    }, true);
+  }
+
+  deleteBackup(kind, id) {
+    const item = this.backupItem(kind, id);
+    if (!item?.actions?.delete) throw new ApiError({code: 'backup_operation_active', message: t('failed'), help_slug: 'backup.overview'}, 409);
+    const target = kind === 'file_version' ? `file:${id}` : String(id);
+    const path = kind === 'file_version' ? `/backups/file/${id}` : `/backups/${id}`;
+    this.openForm('remove', `<div class="notice danger"><strong>${escapeHtml(t('danger'))}</strong>${escapeHtml(t('warningBackupDelete'))}</div><pre class="code">${escapeHtml(`${this.backupTypeText(item.type)}: ${item.target}`)}</pre><p class="hint">${escapeHtml(t('backupDeleteRecordHint'))}</p><label class="check"><input name="delete_remote" type="checkbox">${escapeHtml(t('deleteRemoteArchive'))}</label>`, 'remove', async form => {
+      const deleteRemote = form.elements.delete_remote.checked;
+      if (deleteRemote && (kind === 'file_version' || ['directory', 'deployment', 'full'].includes(String(item.type)))) this.assertWritableCapabilities('files');
+      const confirmation = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: 'backup.delete', target, preview: {backup_id: id, type: item.type, delete_remote: deleteRemote}}});
+      await this.api.request(this.hostPath(path), {method: 'DELETE', body: {delete_remote: deleteRemote, confirmation: confirmation.nonce}});
+      this.closeDialog();
+      await this.pageBackups();
+      this.toast(t('success'));
+      this.haptic('success');
+    }, true);
+  }
 
   deploymentEventMetadata(event) {
     if (event?.metadata && typeof event.metadata === 'object' && !Array.isArray(event.metadata)) return event.metadata;

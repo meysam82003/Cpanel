@@ -41,7 +41,8 @@ final class UapiClient
         $lastError = null;
 
         for ($attempt = 1; $attempt <= $attempts; $attempt++) {
-            foreach ($validated['ips'] as $ip) {
+            $candidateIps = $idempotent ? $validated['ips'] : array_slice($validated['ips'], 0, 1);
+            foreach ($candidateIps as $ip) {
                 try {
                     return $this->perform($validated, $ip, $connection, $module, $function, $parameters, $method, $files);
                 } catch (CpanelApiException $exception) {

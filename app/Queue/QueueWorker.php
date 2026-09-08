@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Queue;
 
+use App\Backup\BackupJobTracker;
 use App\Core\AppException;
 use App\Core\Logger;
 use App\Deployment\DeploymentRecoveryService;
@@ -16,6 +17,7 @@ final class QueueWorker
         private readonly array $handlers,
         private readonly Logger $logger,
         private readonly ?DeploymentRecoveryService $deploymentRecovery = null,
+        private readonly ?BackupJobTracker $backupJobs = null,
     ) {
     }
 
@@ -35,10 +37,12 @@ final class QueueWorker
             }
             $result = $handler->handle(new JobContext($this->queue, $job), $this->queue->payload($job));
             $this->queue->complete($job, $result);
+            $this->trackBackupCompletion((int) $job['id'], $result);
         } catch (\Throwable $exception) {
             $code = $exception instanceof AppException ? $exception->safeCode : 'queue_job_failed';
             $this->logger->error($exception, ['job_id' => $job['id'], 'job_type' => $job['job_type']]);
             $this->queue->fail($job, $code, $exception instanceof AppException ? $exception->getMessage() : 'The queued operation failed.');
+            $this->trackBackupFailure((int) $job['id'], $code);
         }
         return true;
     }
@@ -51,5 +55,24 @@ final class QueueWorker
             $processed++;
         }
         return $processed;
+    }
+
+    /** @param array<string,mixed> $result */
+    private function trackBackupCompletion(int $jobId, array $result): void
+    {
+        try {
+            $this->backupJobs?->completed($jobId, $result);
+        } catch (\Throwable $exception) {
+            $this->logger->error($exception, ['job_id' => $jobId, 'component' => 'backup_job_tracker', 'transition' => 'completed']);
+        }
+    }
+
+    private function trackBackupFailure(int $jobId, string $code): void
+    {
+        try {
+            $this->backupJobs?->failed($jobId, $code);
+        } catch (\Throwable $exception) {
+            $this->logger->error($exception, ['job_id' => $jobId, 'component' => 'backup_job_tracker', 'transition' => 'failed']);
+        }
     }
 }

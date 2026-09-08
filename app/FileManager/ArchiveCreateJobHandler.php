@@ -152,12 +152,15 @@ final class ArchiveCreateJobHandler implements JobHandler
      */
     private function result(array $state, array $request): array
     {
+        $details = json_decode((string) ($state['reconciliation_json'] ?? ''), true);
+        $details = is_array($details) ? $details : [];
         return [
             'job_id' => (int) $state['job_id'],
             'operation' => 'create',
             'destination' => $request['destination'],
             'format' => $request['format'],
             'source_count' => count($request['sources']),
+            'bytes' => isset($details['output_bytes']) ? (int) $details['output_bytes'] : null,
             'reconciled' => (bool) $state['reconciled'],
             'completed' => (string) $state['status'] === 'completed',
         ];

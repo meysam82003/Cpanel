@@ -1,0 +1,128 @@
+.backup-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 9px;
+  margin-block: 12px 18px;
+}
+
+.backup-section {
+  margin-block: 24px;
+  scroll-margin-block-start: 90px;
+}
+
+.backup-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 285px), 1fr));
+}
+
+.backup-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow: hidden;
+}
+
+.backup-card::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 4px;
+  background: color-mix(in srgb, var(--ok) 72%, var(--accent));
+}
+
+.backup-card.backup-active::before {
+  background: var(--warning);
+}
+
+.backup-card.backup-active {
+  border-color: color-mix(in srgb, var(--warning) 45%, var(--line));
+  background: linear-gradient(145deg, color-mix(in srgb, var(--warning) 6%, var(--surface)), var(--surface));
+}
+
+.backup-card .page-head {
+  margin-block-end: 4px;
+}
+
+.backup-card .page-head > div {
+  min-width: 0;
+}
+
+.backup-card h3 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-card .key-values {
+  font-size: 13px;
+  margin-block: 8px 14px;
+}
+
+.backup-card .row-actions {
+  margin-block-start: auto;
+}
+
+.backup-card .row-actions .button {
+  flex: 1 1 auto;
+}
+
+.provider-backup-details {
+  margin-block: 14px 22px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.provider-backup-details summary {
+  color: var(--link);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.provider-backup-details .code {
+  margin-block-end: 0;
+  max-height: 340px;
+}
+
+body.advanced .provider-backup-details {
+  display: block;
+}
+
+@media (max-width: 640px) {
+  .backup-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .backup-actions .button:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .backup-card .row-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 370px) {
+  .backup-actions,
+  .backup-card .row-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-actions .button:first-child {
+    grid-column: auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .backup-card.backup-active::before {
+    animation: backup-pulse 1.5s ease-in-out infinite;
+  }
+}
+
+@keyframes backup-pulse {
+  0%, 100% { opacity: .55; }
+  50% { opacity: 1; }
+}

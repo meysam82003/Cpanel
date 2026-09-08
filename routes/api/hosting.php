@@ -169,17 +169,38 @@ return static function (ApiKernel $api, Container $container): void {
         $plans->feature((int) $session['user_id'], 'backup_enabled');
         return $backups->directory((int) $session['user_id'], (int) $params['account'], (string) $request->input('directory', ''), $request->input('destination') === null ? null : (string) $request->input('destination'));
     }, 10);
-    $api->route('POST', '/api/v1/hosts/{account}/backups/{backup}/restore', static function (Request $request, array $params, array $session) use ($backups, $confirmations): array {
+    $api->route('POST', '/api/v1/hosts/{account}/backups/{backup}/restore', static function (Request $request, array $params, array $session) use ($backups, $confirmations, $plans): array {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
         $target = (string) $params['backup'] . ':' . (string) $request->input('destination', '');
         $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'backup.restore', $target);
-        return $backups->restoreDirectory((int) $session['user_id'], (int) $params['account'], (int) $params['backup'], (string) $request->input('destination', ''));
+        return $backups->restore((int) $session['user_id'], (int) $params['account'], (int) $params['backup'], (string) $request->input('destination', ''));
     }, 5);
-    $api->route('DELETE', '/api/v1/hosts/{account}/backups/{backup}', static function (Request $request, array $params, array $session) use ($backups, $confirmations): array {
+    $api->route('POST', '/api/v1/hosts/{account}/backups/file/{version}/restore', static function (Request $request, array $params, array $session) use ($backups, $confirmations, $plans): array {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
+        $target = 'file:' . (string) $params['version'];
+        $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'backup.restore', $target);
+        return $backups->restoreFileVersion((int) $session['user_id'], (int) $params['account'], (int) $params['version']);
+    }, 5);
+    $api->route('DELETE', '/api/v1/hosts/{account}/backups/file/{version}', static function (Request $request, array $params, array $session) use ($backups, $confirmations, $plans): array {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
+        $target = 'file:' . (string) $params['version'];
+        $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'backup.delete', $target);
+        $backups->deleteFileVersion((int) $session['user_id'], (int) $params['account'], (int) $params['version'], filter_var($request->input('delete_remote', false), FILTER_VALIDATE_BOOL));
+        return ['removed' => true];
+    }, 10);
+    $api->route('GET', '/api/v1/hosts/{account}/backups/file/{version}/download', static function (Request $request, array $params, array $session) use ($backups, $downloads, $plans): array {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
+        $version = $backups->fileVersion((int) $session['user_id'], (int) $params['account'], (int) $params['version']);
+        return ['download' => $downloads->issue((int) $session['user_id'], (int) $params['account'], (string) $version['backup_path'])];
+    }, 20, true);
+    $api->route('DELETE', '/api/v1/hosts/{account}/backups/{backup}', static function (Request $request, array $params, array $session) use ($backups, $confirmations, $plans): array {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
         $confirmations->consume((string) $request->input('confirmation', ''), (int) $session['user_id'], (int) $params['account'], 'backup.delete', (string) $params['backup']);
         $backups->deleteRecord((int) $session['user_id'], (int) $params['account'], (int) $params['backup'], filter_var($request->input('delete_remote', false), FILTER_VALIDATE_BOOL));
         return ['removed' => true];
     }, 10);
-    $api->route('GET', '/api/v1/hosts/{account}/backups/{backup}/download', static function (Request $request, array $params, array $session) use ($database, $downloads, $container): array|Response {
+    $api->route('GET', '/api/v1/hosts/{account}/backups/{backup}/download', static function (Request $request, array $params, array $session) use ($database, $downloads, $container, $plans): array|Response {
+        $plans->feature((int) $session['user_id'], 'backup_enabled');
         $backup = $database->one('SELECT * FROM backups WHERE id = ? AND user_id = ? AND account_id = ?', [(int) $params['backup'], (int) $session['user_id'], (int) $params['account']]);
         if ($backup === null) {
             throw new AppException('Backup was not found or does not belong to you.', 404, 'backup_not_found', [], 'security.idor');

@@ -11,6 +11,7 @@ use App\Accounts\UserSettingsService;
 use App\Admin\AdminService;
 use App\Admin\BroadcastJobHandler;
 use App\Audit\AuditLogger;
+use App\Backup\BackupJobTracker;
 use App\Backup\BackupService;
 use App\Cpanel\CapabilityDetector;
 use App\Cpanel\UapiClient;
@@ -120,7 +121,7 @@ final class Container
             SqlConsoleCoordinator::class => new SqlConsoleCoordinator($this->get(Database::class), $this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(SqlConsoleService::class), $this->root . '/storage/backups'),
             DatabaseDumpWriter::class => new DatabaseDumpWriter(),
             QueueService::class => new QueueService($this->get(Database::class), $this->get(Crypto::class), Env::int('QUEUE_STALE_AFTER_SECONDS', 3600)),
-            SqlTransferService::class => new SqlTransferService($this->get(QueueService::class), $this->root . '/storage/temp'),
+            SqlTransferService::class => new SqlTransferService($this->get(QueueService::class), $this->root . '/storage/temp', [$this->root . '/storage/backups', $this->root . '/storage/downloads']),
             DomainService::class => new DomainService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
             EmailService::class => new EmailService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
             SslService::class => new SslService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
@@ -129,7 +130,8 @@ final class Container
             UsageService::class => new UsageService($this->get(AccountRepository::class), $this->get(UapiClient::class)),
             PhpSettingsService::class => new PhpSettingsService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(AuditLogger::class)),
             LogViewerService::class => new LogViewerService($this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(PathGuard::class), $this->root . '/storage/temp'),
-            BackupService::class => new BackupService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(SqlTransferService::class), $this->get(AuditLogger::class), $this->get(NotificationService::class)),
+            BackupJobTracker::class => new BackupJobTracker($this->get(Database::class), $this->get(AuditLogger::class), $this->get(NotificationService::class)),
+            BackupService::class => new BackupService($this->get(Database::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(FileManagerService::class), $this->get(ArchiveService::class), $this->get(SqlTransferService::class), $this->get(DeploymentService::class), $this->get(BackupJobTracker::class), $this->get(AuditLogger::class), $this->get(NotificationService::class), [$this->root . '/storage/backups', $this->root . '/storage/downloads']),
             OperationLockService::class => new OperationLockService($this->get(Database::class)),
             ZipPackageValidator::class => new ZipPackageValidator($this->get(ArchiveSafetyValidator::class)),
             HealthCheckService::class => new HealthCheckService(new HostValidator(false, [443], 443)),
@@ -156,7 +158,7 @@ final class Container
             ErrorGuidanceService::class => new ErrorGuidanceService(),
             BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), rtrim((string) Config::app('url'), '/') . '/miniapp/', $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(TelegramUploadService::class)),
             CleanupService::class => new CleanupService($this->get(Database::class), $this->root . '/storage'),
-            QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class), $this->get(DeploymentRecoveryService::class)),
+            QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class), $this->get(DeploymentRecoveryService::class), $this->get(BackupJobTracker::class)),
             default => throw new AppException('Service is not registered: ' . $id, 500, 'service_not_registered'),
         };
         $this->instances[$id] = $service;
