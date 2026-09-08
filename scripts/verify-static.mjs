@@ -50,6 +50,7 @@ assert(applicationSource.includes("str_starts_with($request->path, '/api/v1/')")
 const apiAuditBlock = applicationSource.match(/private function recordApiAudit[\s\S]*?\n    }\n\n    private function/)?.[0] || '';
 assert(apiAuditBlock !== '' && !apiAuditBlock.includes('$request->body') && !apiAuditBlock.includes('$request->query'), 'Central API audit captures request body or query data.');
 assert(read('app/Audit/AuditLogger.php').includes("['api.request', 'file.browse', 'host.health']"), 'High-volume API audit events pollute user recent actions.');
+assert(read('app/Plans/PlanGuard.php').includes("action NOT IN ('api.request', 'file.browse', 'host.health')"), 'Read-only central audit events incorrectly consume the plan mutation quota.');
 const routeRegexes = routes.map(route => new RegExp(`^${route.path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\{[^}]+\\\}/g, '[^/]+')}/?$`));
 const hasRoute = candidate => routeRegexes.some(regex => regex.test(candidate.replace(/\?.*$/, '')));
 const hostSuffixes = new Set([...appSource.matchAll(/hostPath\(\s*['"]([^'"]*)['"]/g)].map(match => `/api/v1/hosts/1${match[1]}`));

@@ -99,6 +99,7 @@ This inventory names the operational code paths delivered by the project. The on
 - Host inventory without raw tokens, plan editing/assignment, bilingual broadcast queue with per-recipient delivery ledger.
 - Tenant and global audit logs, security events, queue and failed-job screens, owner-preserving retry.
 - Every versioned API response is recorded by a central fail-safe audit hook with actor, route template, method, status, duration, request ID, and validated IP; request bodies and query values are never captured.
+- Central request-audit, file browsing, and health probes are excluded from daily mutation quota accounting.
 - Bounded worker/notification/retention settings and bilingual maintenance messages.
 - Health checks for application version, PHP/extensions, database latency/schema, Telegram webhook, encryption round trip, storage, disk, queue, failed jobs, cron heartbeat and recent errors.
 - Shared-host cron orchestration and VPS worker mode.
