@@ -14,15 +14,15 @@ The `CI` workflow is required to complete these jobs before its installable arti
 | `installation` | PHP 8.2 + MariaDB 11.4 | Fresh migrations, seeds, help import, engine/collation/FK checks, and idempotent rerun |
 | `package` | Ubuntu | Build, secret scan, per-file checksums, ZIP integrity, required-file contract, artifact upload |
 
-Verified baseline before the release-readiness additions:
+Verified release-readiness run:
 
-- GitHub commit: `40a952884baac49f432362dc9075a74edb29f3ba`
-- Workflow: `CI #6`, run `34185610108`
-- PHP suite: 143 PHP files linted; 130 tests, 492 assertions, 3 explicit credential/environment skips.
+- GitHub commit: `49d54fcc4cef4cee127751890838a0878e7fec01`
+- Workflow: `CI #8`, run `34187466831`.
+- PHP suite: 146 PHP files linted; 134 tests, 520 assertions, 3 explicit credential/environment skips.
 - MariaDB installation: 1 integration test, 97 assertions on MariaDB 11.4.13.
-- All PHP 8.2, 8.3, 8.4, and installation jobs: success.
-
-The next workflow for this document's own commit adds Security Center, updater, version, and release-package tests. The final handoff records that run after completion.
+- Package: secret/integrity build passed; inner release SHA-256 `ab69d6f47530a854692d7d805dfbe2e5bd5d6d93a183addc4e6f533dc07fb769`.
+- Uploaded artifact: `telegram-cpanel-manager-49d54fcc4cef4cee127751890838a0878e7fec01`, artifact ID `10041012598`, 691,863 bytes, retained through 2026-10-08.
+- All PHP 8.2, 8.3, 8.4, installation, and package jobs: success.
 
 ## Unit and security coverage
 

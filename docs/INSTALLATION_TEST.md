@@ -4,12 +4,12 @@
 
 The database portion of a fresh install and a safe repeated run are executed in GitHub Actions against a real MariaDB service, not SQLite or a mocked query layer.
 
-Verified baseline:
+Verified release-readiness run:
 
 | Item | Result |
 |---|---|
-| Workflow | CI #6, run `34185610108` |
-| Commit | `40a952884baac49f432362dc9075a74edb29f3ba` |
+| Workflow | CI #8, run `34187466831` |
+| Commit | `49d54fcc4cef4cee127751890838a0878e7fec01` |
 | Database image | MariaDB 11.4.13 |
 | Test | `tests/Integration/MariaDbInstallationTest.php` |
 | Result | PASS — 1 test, 97 assertions |
@@ -21,7 +21,7 @@ Verified baseline:
 | Character set | Every application table uses an `utf8mb4_*` collation |
 | Foreign-key topology | More than 20 constraints present |
 
-The release-readiness commit adds more tests and the package artifact gate. Its final run supersedes this baseline at handoff.
+The same run also passed 134 PHPUnit tests/520 assertions on each PHP matrix target and built the verified release artifact after every test/install dependency succeeded.
 
 ## Web Installer contract verified automatically
 

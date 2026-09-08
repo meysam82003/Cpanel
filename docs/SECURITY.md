@@ -71,11 +71,11 @@ Security Center exposes only the current tenant's hosts, failed-token count, sus
 
 ## Security test result
 
-- PHP lint and PHPUnit security/unit suites: successful on PHP 8.2, 8.3 and 8.4 at the recorded CI baseline.
-- Rate limiter and MariaDB installation security checks: successful in `CI #6`.
+- PHP lint and PHPUnit security/unit suites: successful on PHP 8.2, 8.3 and 8.4 in `CI #8` (134 tests, 520 assertions per matrix run, 3 explicit environment skips).
+- Rate limiter, Security Center isolation and MariaDB installation security checks: successful in `CI #8`.
 - Official cPanel OpenAPI operation contract: 68 checked operations, zero failures at the recorded check.
 - Static secret/unfinished-marker scan: zero failures.
-- Release ZIP secret scan and checksum verification: enforced by the package job added in this release-readiness phase; final CI result is recorded at handoff.
+- Release ZIP secret scan, internal/external checksum and required-file verification: successful; CI package SHA-256 `ab69d6f47530a854692d7d805dfbe2e5bd5d6d93a183addc4e6f533dc07fb769`.
 
 See [TESTED.md](TESTED.md) for test counts and [LIMITATIONS.md](LIMITATIONS.md) for environmental controls that application code cannot guarantee.
 
