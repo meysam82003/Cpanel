@@ -31,6 +31,7 @@ final class AdminService
     {
         $this->admin($adminId);
         $totals = $this->database->one("SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM users WHERE last_seen_at >= DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY) AND status = 'active') AS active_users, (SELECT COUNT(*) FROM cpanel_accounts) AS hosts, (SELECT COUNT(*) FROM api_request_metrics WHERE created_at >= UTC_DATE()) AS api_requests_today, (SELECT COUNT(*) FROM api_request_metrics WHERE status_code >= 500 AND created_at >= UTC_DATE()) AS errors_today, (SELECT COUNT(*) FROM queue_jobs WHERE status IN ('queued','running')) AS queued, (SELECT COUNT(*) FROM queue_failed_jobs) AS failed_jobs, (SELECT COUNT(*) FROM security_events WHERE acknowledged_at IS NULL AND severity IN ('warning','danger')) AS security_alerts");
+        $totals['storage_free_bytes'] = @disk_free_space($this->root . '/storage') ?: null;
         return ['totals' => $totals, 'queue' => $this->database->all('SELECT status, COUNT(*) AS total FROM queue_jobs GROUP BY status'), 'recent_errors' => $this->database->all('SELECT route, method, status_code, duration_ms, created_at FROM api_request_metrics WHERE status_code >= 400 ORDER BY id DESC LIMIT 25')];
     }
 

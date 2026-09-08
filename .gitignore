@@ -10,5 +10,5 @@
 !/storage/**/.gitkeep
 /.phpunit.cache/
 /coverage/
+/dist/
 *.zip
-

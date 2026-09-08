@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Installer;
 
 use App\Accounts\UserRepository;
+use App\Core\Config;
 use App\Core\Database;
 use App\Core\MigrationRunner;
 use App\Help\HelpSeeder;
@@ -117,7 +118,7 @@ final class InstallerService
             'APP_URL' => $urls['app_url'],
             'APP_TIMEZONE' => 'UTC',
             'APP_KEY' => 'base64:' . base64_encode($secrets['app_key']),
-            'APP_VERSION' => '1.0.0',
+            'APP_VERSION' => Config::packageVersion(),
             'ENCRYPTION_KEY_V1' => 'base64:' . base64_encode($secrets['encryption_key']),
             'ENCRYPTION_CURRENT_VERSION' => '1',
             'WEBHOOK_SECRET' => $secrets['webhook_secret'],
@@ -314,7 +315,7 @@ final class InstallerService
 
     private function writeLock(int $botId, string $username): void
     {
-        $content = json_encode(['installed_at' => gmdate('c'), 'app_version' => '1.0.0', 'bot_id' => $botId, 'bot_username' => $username], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        $content = json_encode(['installed_at' => gmdate('c'), 'app_version' => Config::packageVersion(), 'bot_id' => $botId, 'bot_username' => $username], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
         if (file_put_contents($this->root . '/storage/installed.lock', $content . PHP_EOL, LOCK_EX) === false) {
             throw new InstallerException('installer_lock_write_failed', 'قفل نهایی نصب نوشته نشد. Permission مسیر storage را بررسی و دوباره تلاش کنید.', 'The final installation lock could not be written. Check storage permissions and retry.');
         }

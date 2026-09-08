@@ -65,3 +65,19 @@ jobs:
           TEST_MYSQL_USER: tcm_test
           TEST_MYSQL_PASSWORD: tcm-test-password
         run: vendor/bin/phpunit tests/Integration/MariaDbInstallationTest.php --colors=always
+
+  package:
+    runs-on: ubuntu-latest
+    needs: [test, installation]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and verify installable ZIP
+        run: scripts/build-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: telegram-cpanel-manager-${{ github.sha }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+          retention-days: 30

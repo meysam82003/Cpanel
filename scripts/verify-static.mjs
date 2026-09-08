@@ -59,6 +59,27 @@ assert(installer.includes('InstallerException') && installer.includes("'message_
 const installerService = read('app/Installer/InstallerService.php');
 assert(installerService.includes('LOCK_EX | LOCK_NB') && installerService.includes('installer_busy'), 'Installer does not prevent concurrent execution.');
 
+const version = read('VERSION').trim();
+assert(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version), 'VERSION is not a supported semantic version.');
+assert(installerService.includes("'APP_VERSION' => Config::packageVersion()") && installerService.includes("'app_version' => Config::packageVersion()"), 'Installer version metadata does not use the repository version source.');
+const updater = read('cli/update.php');
+assert(updater.includes("PHP_SAPI !== 'cli'") && updater.includes("hash_equals(Env::require('CRON_SECRET')") && updater.includes('LOCK_EX | LOCK_NB'), 'Updater is not CLI-only, authenticated, and exclusively locked.');
+assert(updater.includes('MigrationRunner') && updater.includes('HelpSeeder') && updater.includes("'system.update'"), 'Updater does not migrate, refresh help, and audit the release.');
+
+const releaseBuilder = read('scripts/build-release.sh');
+const ciWorkflow = read('.github/workflows/ci.yml');
+assert(releaseBuilder.includes('git archive --format=tar HEAD') && releaseBuilder.includes('CHECKSUMS.sha256') && releaseBuilder.includes('unzip -tqq'), 'Release builder lacks clean-source, checksum, or ZIP verification.');
+assert(releaseBuilder.includes('installed.lock') && releaseBuilder.includes('PRIVATE KEY') && releaseBuilder.includes('telegram-cpanel-manager-$version.zip'), 'Release builder does not block runtime secrets or produce a versioned archive.');
+assert(ciWorkflow.includes('mariadb:11.4') && ciWorkflow.includes('MariaDbInstallationTest.php'), 'CI does not test a real MariaDB installation.');
+assert(ciWorkflow.includes('needs: [test, installation]') && ciWorkflow.includes('actions/upload-artifact@v4'), 'CI does not gate and publish the installable package.');
+
+const acceptance = read('docs/ACCEPTANCE.md');
+const acceptanceSections = [...acceptance.matchAll(/^\|\s*(\d{1,2})\s*\|/gm)].map(match => Number(match[1]));
+assert(JSON.stringify(acceptanceSections) === JSON.stringify(Array.from({length: 95}, (_, index) => index + 1)), 'Acceptance report does not contain each cumulative scope section exactly once and in order.');
+for (const documentation of ['README.md', 'README.fa.md', 'docs/IMPLEMENTED.md', 'docs/TESTED.md', 'docs/SECURITY.md', 'docs/INSTALLATION_TEST.md', 'docs/LIMITATIONS.md', 'docs/ACCEPTANCE.md']) {
+  assert(read(documentation).trim().length > 500, `Required documentation is incomplete: ${documentation}`);
+}
+
 const migrations = walk('database/migrations').filter(file => file.endsWith('.sql')).sort();
 assert(migrations.length >= 4, `Expected at least four migrations, found ${migrations.length}.`);
 const schema = migrations.map(read).join('\n');
@@ -155,6 +176,16 @@ assert((deploymentRoutes.match(/feature\(\(int\) \$session\['user_id'\], 'backup
 for (const action of ['backup-refresh', 'backup-progress', 'backup-download', 'backup-restore', 'backup-delete']) assert(handlers.has(action), `Backup Center action is not connected: ${action}`);
 assert(appSource.includes('pollJob(Number(result.job_id), false)') && appSource.includes('pollDeployment(Number(result.job_id), Number(result.deployment_id), true)'), 'Backup Center does not track queued restore/backup and deployment rollback progress.');
 assert(read('public/miniapp/index.html').includes('/miniapp/backup.css'), 'Backup Center responsive styling is not loaded.');
+
+const securityCenter = read('app/Security/SecurityCenterService.php');
+for (const key of ['connected_hosts', 'failed_tokens', 'suspicious_requests', 'recent_destructive_actions', 'active_sessions', 'security_alerts']) {
+  assert(securityCenter.includes(`'${key}'`), `Security Center summary is missing ${key}.`);
+}
+for (const key of ['activeUsers', 'storageFree', 'suspiciousRequests', 'recentDestructiveActions', 'securityAlerts']) {
+  assert(Object.hasOwn(dictionaries.fa, key) && Object.hasOwn(dictionaries.en, key), `Operational dashboard key is not bilingual: ${key}`);
+}
+assert(appSource.includes("['activeUsers', Number(totals.active_users") && appSource.includes("['storageFree', totals.storage_free_bytes"), 'Admin dashboard omits active users or storage.');
+assert(appSource.includes("['suspiciousRequests', summary.suspicious_requests]") && appSource.includes("['securityAlerts', summary.security_alerts]"), 'Security Center does not render its backend summary.');
 
 const productionFiles = ['app', 'bootstrap', 'cli', 'public', 'resources', 'routes', 'database'].flatMap(directory => walk(directory)).filter(file => !file.startsWith('public/miniapp/vendor/'));
 for (const file of productionFiles) {

@@ -12,10 +12,20 @@ final class Config
             'env' => Env::get('APP_ENV', 'production'),
             'debug' => Env::bool('APP_DEBUG'),
             'url' => rtrim((string) Env::get('APP_URL', ''), '/'),
-            'version' => Env::get('APP_VERSION', '1.0.0'),
+            'version' => self::packageVersion(),
             'timezone' => Env::get('APP_TIMEZONE', 'UTC'),
             default => $default,
         };
+    }
+
+    public static function packageVersion(): string
+    {
+        $path = dirname(__DIR__, 2) . '/VERSION';
+        $version = is_file($path) && is_readable($path) ? trim((string) file_get_contents($path)) : '';
+        if (preg_match('/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/', $version) === 1) {
+            return $version;
+        }
+        return (string) Env::get('APP_VERSION', '1.0.0');
     }
 
     /** @return array<string, int|string> */
