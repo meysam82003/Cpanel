@@ -177,7 +177,9 @@ for (const key of ['deployStepPackage', 'deployStepDestination', 'deployStepVali
 assert(appSource.includes('deploymentWizardMarkup(') && appSource.includes('pollDeployment(') && appSource.includes('result.current_versions') && appSource.includes('result.rollback_points'), 'Mini App Deployment Center is missing its real eight-step state timeline or release overview.');
 assert(!appSource.includes("requireCapability(['files', 'backup'], 'deployCenter')"), 'Deployment Center is incorrectly disabled when the unrelated Full Backup capability is absent.');
 assert(!appSource.includes('escapeHtml(event.message_key)'), 'Mini App renders an untranslated deployment event key.');
-assert(read('public/miniapp/index.html').includes('/miniapp/deployment.css'), 'Deployment Center responsive styling is not loaded.');
+const miniAppIndex = read('public/miniapp/index.html');
+assert(miniAppIndex.includes('href="./styles.css"') && miniAppIndex.includes('src="./app.js"'), 'Mini App core assets must remain relative for subdirectory installations.');
+assert(miniAppIndex.includes('href="./deployment.css"'), 'Deployment Center responsive styling is not loaded from the Mini App directory.');
 
 const backupService = read('app/Backup/BackupService.php');
 const backupTracker = read('app/Backup/BackupJobTracker.php');
@@ -195,7 +197,7 @@ for (const routeContract of ['/backups/file/{version}/restore', '/backups/file/{
 assert((deploymentRoutes.match(/feature\(\(int\) \$session\['user_id'\], 'backup_enabled'\)/g) || []).length >= 9, 'Backup feature policy is not enforced on every backup API operation.');
 for (const action of ['backup-refresh', 'backup-progress', 'backup-download', 'backup-restore', 'backup-delete']) assert(handlers.has(action), `Backup Center action is not connected: ${action}`);
 assert(appSource.includes('pollJob(Number(result.job_id), false)') && appSource.includes('pollDeployment(Number(result.job_id), Number(result.deployment_id), true)'), 'Backup Center does not track queued restore/backup and deployment rollback progress.');
-assert(read('public/miniapp/index.html').includes('/miniapp/backup.css'), 'Backup Center responsive styling is not loaded.');
+assert(miniAppIndex.includes('href="./backup.css"'), 'Backup Center responsive styling is not loaded from the Mini App directory.');
 
 const securityCenter = read('app/Security/SecurityCenterService.php');
 for (const key of ['connected_hosts', 'failed_tokens', 'suspicious_requests', 'recent_destructive_actions', 'active_sessions', 'security_alerts']) {
