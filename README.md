@@ -182,7 +182,7 @@ From a clean Git checkout:
 
 ```bash
 scripts/build-release.sh
-sha256sum -c dist/telegram-cpanel-manager-1.0.0.zip.sha256
+(cd dist && sha256sum -c telegram-cpanel-manager-1.0.0.zip.sha256)
 ```
 
 The builder archives only committed source, removes CI/dev-only files, creates protected runtime directories, adds a per-file checksum manifest, normalizes timestamps, scans for token/private-key patterns, rejects `.env` and install locks, tests the ZIP, and writes an external SHA-256 file. CI performs the same build after all PHP and MariaDB jobs pass and publishes it as a workflow artifact.

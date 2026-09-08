@@ -182,7 +182,7 @@ Deployment ساختار و checksum ZIP را بررسی، Backup اجباری ر
 
 ```bash
 scripts/build-release.sh
-sha256sum -c dist/telegram-cpanel-manager-1.0.0.zip.sha256
+(cd dist && sha256sum -c telegram-cpanel-manager-1.0.0.zip.sha256)
 ```
 
 Builder فقط Source commit‌شده را Archive می‌کند، فایل‌های CI/dev را کنار می‌گذارد، Runtime directory محافظت‌شده می‌سازد، Manifest checksum هر فایل را اضافه می‌کند، Timestampها را نرمال، Token/Private Key را Scan، وجود `.env` و Install lock را رد، خود ZIP را Test و SHA-256 بیرونی تولید می‌کند. CI همین بسته را فقط پس از موفقیت PHP و MariaDB ساخته و به‌صورت Workflow Artifact منتشر می‌کند.

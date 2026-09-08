@@ -46,6 +46,8 @@ final class ReleaseContractTest extends TestCase
         self::assertStringContainsString('git archive --format=tar HEAD', $builder);
         self::assertStringContainsString('CHECKSUMS.sha256', $builder);
         self::assertStringContainsString('unzip -tqq', $builder);
+        self::assertStringContainsString('sha256sum -c CHECKSUMS.sha256', $builder);
+        self::assertStringContainsString('sha256sum -c', $builder);
         self::assertStringContainsString('installed.lock', $builder);
         self::assertStringContainsString('PRIVATE KEY', $builder);
         self::assertStringContainsString('actions/upload-artifact@v4', $workflow);

@@ -75,17 +75,30 @@ rm -f -- "$archive" "$checksum"
   find . -mindepth 1 -print | LC_ALL=C sort | zip -q -X "$archive" -@
 )
 unzip -tqq "$archive"
+verification="$temporary_root/verification"
+mkdir -p "$verification"
+unzip -q "$archive" -d "$verification"
+(
+  cd "$verification"
+  sha256sum -c CHECKSUMS.sha256 >/dev/null
+)
+archive_entries="$(unzip -Z1 "$archive" | sed 's#^\./##')"
 
 for required in .htaccess VERSION composer.json README.md README.fa.md docs/IMPLEMENTED.md docs/TESTED.md docs/SECURITY.md docs/INSTALLATION_TEST.md docs/LIMITATIONS.md docs/ACCEPTANCE.md public/install.php public/index.php public/miniapp/index.html cli/cron.php cli/worker.php cli/update.php database/migrations/001_initial.sql CHECKSUMS.sha256 BUILD-MANIFEST.json; do
-  if ! unzip -Z1 "$archive" | sed 's#^\./##' | grep -Fxq "$required"; then
+  if ! grep -Fxq "$required" <<< "$archive_entries"; then
     echo "Release archive is missing $required." >&2
     exit 1
   fi
 done
-if unzip -Z1 "$archive" | sed 's#^\./##' | grep -Eq '(^|/)\.env$|(^|/)installed\.lock$'; then
+if grep -Eq '(^|/)\.env$|(^|/)installed\.lock$' <<< "$archive_entries"; then
   echo "Release archive contains runtime secrets or an installation lock." >&2
   exit 1
 fi
 
-sha256sum "$archive" | sed "s#  $output_dir/##" > "$checksum"
-printf 'Release: %s\nSHA-256: %s\n' "$archive" "$(cut -d ' ' -f1 "$checksum")"
+archive_hash="$(sha256sum "$archive" | cut -d ' ' -f1)"
+printf '%s  %s\n' "$archive_hash" "$(basename "$archive")" > "$checksum"
+(
+  cd "$output_dir"
+  sha256sum -c "$(basename "$checksum")" >/dev/null
+)
+printf 'Release: %s\nSHA-256: %s\n' "$archive" "$archive_hash"
