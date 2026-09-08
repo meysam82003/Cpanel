@@ -5,7 +5,7 @@ set -Eeuo pipefail
 release_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$release_root"
 
-if [[ ! -d .git ]]; then
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "build-release must run from a Git checkout." >&2
   exit 1
 fi
