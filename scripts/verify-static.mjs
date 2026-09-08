@@ -22,6 +22,11 @@ const phpDictionaryKeys = language => [...read(`resources/lang/${language}/messa
 const phpFaKeys = phpDictionaryKeys('fa');
 const phpEnKeys = phpDictionaryKeys('en');
 assert(JSON.stringify(phpFaKeys) === JSON.stringify(phpEnKeys), 'Bot/API Persian and English dictionaries have different keys.');
+const botSource = read('app/Telegram/BotHandler.php');
+const createdBotCallbacks = new Set([...botSource.matchAll(/callbacks->create\([^,\n]+,\s*'([^']+)'/g)].map(match => match[1]));
+const handledBotCallbacks = new Set([...botSource.matchAll(/case\s+'([^']+)'\s*:/g)].map(match => match[1]));
+for (const action of createdBotCallbacks) assert(handledBotCallbacks.has(action), `Telegram callback has no handler: ${action}`);
+assert(createdBotCallbacks.has('file.upload_overwrite_confirm') && botSource.includes("waiting_for_upload_overwrite_confirmation") && botSource.includes("'section.host_info'"), 'Telegram overwrite confirmation or Host Information entry is missing.');
 
 const appSource = read('public/miniapp/app.js');
 const usedTranslationKeys = new Set([...appSource.matchAll(/\bt\(\s*['"]([A-Za-z0-9_]+)['"]/g)].map(match => match[1]));
@@ -125,6 +130,8 @@ assert(!read('database/migrations/008_telegram_file_uploads.sql').includes('file
 const containerSource = read('app/Core/Container.php');
 assert(containerSource.includes("'file.archive_create' => new ArchiveCreateJobHandler") && containerSource.includes("'file.archive_extract' => new ArchiveExtractJobHandler"), 'Archive operations are not connected to both queue handlers.');
 const archiveRoutes = read('routes/api/files.php');
+assert(archiveRoutes.includes('/files/upload-overwrite-confirmation') && archiveRoutes.includes("'file.upload_overwrite'") && archiveRoutes.includes("$confirmations->consume((string) $request->input('confirmation', '')"), 'Browser overwrite upload is not protected by a server-issued, target-bound one-time confirmation.');
+assert(read('app/FileManager/FileManagerService.php').includes('uploadConfirmationTarget(') && appSource.includes("this.hostPath('/files/upload-overwrite-confirmation')") && appSource.includes('confirm_overwrite'), 'Upload overwrite intent is not bound end to end to its path and file set.');
 assert(archiveRoutes.includes('enqueueCreate(') && archiveRoutes.includes('enqueueExtract(') && !archiveRoutes.includes('return $files->compress(') && !archiveRoutes.includes('=> $files->extract('), 'Archive API routes do not exclusively enqueue the durable workflow.');
 const archiveService = read('app/FileManager/ArchiveService.php');
 assert(archiveService.includes('getOwned($userId, $accountId)') && archiveService.includes('safeApi2Path(') && archiveService.includes("'default', 1"), 'Archive queueing lacks tenant ownership, API-path validation, or single-attempt safety.');
@@ -175,6 +182,7 @@ assert(read('public/miniapp/index.html').includes('/miniapp/deployment.css'), 'D
 const backupService = read('app/Backup/BackupService.php');
 const backupTracker = read('app/Backup/BackupJobTracker.php');
 const sqlTransfers = read('app/Database/SqlTransferService.php');
+assert(sqlTransfers.includes('importConfirmationTarget(') && databaseRoutes.includes('/imports/confirmation') && databaseRoutes.includes("'database.import', $target") && appSource.includes('/imports/confirmation'), 'SQL import is not protected by a file-bound one-time confirmation.');
 assert(containerSource.includes('BackupJobTracker::class') && read('app/Queue/QueueWorker.php').includes('trackBackupCompletion(') && read('app/Queue/QueueWorker.php').includes('trackBackupFailure('), 'Backup records are not reconciled with durable queue completion and failure.');
 assert(backupService.includes("'file_backups'") && backupService.includes("'database_backups'") && backupService.includes("'deployment_backups'") && backupService.includes("'full_backups'"), 'Backup inventory is not grouped by recoverable artifact type.');
 assert(backupService.includes('restoreFileVersion(') && backupService.includes('importBackup(') && backupService.includes('->enqueueExtract(') && backupService.includes('->rollback('), 'One or more file, database, directory, or deployment restore paths are not operational.');

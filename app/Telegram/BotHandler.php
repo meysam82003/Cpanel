@@ -178,6 +178,31 @@ final class BotHandler
                     $mode = ($payload['mode'] ?? null) === 'overwrite' ? 'overwrite' : 'rename';
                     $uploadPayload = $session['payload'];
                     $uploadPayload['collision'] = $mode;
+                    if ($mode === 'overwrite') {
+                        $challenge = bin2hex(random_bytes(16));
+                        $uploadPayload['overwrite_challenge'] = $challenge;
+                        $this->sessions->set($userId, 'waiting_for_upload_overwrite_confirmation', $uploadPayload, (int) $uploadPayload['account_id']);
+                        $this->send((int) $chatId, $this->translator->get('files.upload_overwrite_warning', $language), [[
+                            ['text' => '🔴 ' . $this->translator->get('common.confirm', $language), 'callback_data' => $this->callbacks->create($userId, 'file.upload_overwrite_confirm', ['account_id' => (int) $uploadPayload['account_id'], 'challenge' => $challenge])],
+                            ['text' => $this->translator->get('common.cancel', $language), 'callback_data' => $this->callbacks->create($userId, 'session.cancel')],
+                        ]]);
+                        break;
+                    }
+                    $this->sessions->set($userId, 'waiting_for_upload_document', $uploadPayload, (int) $uploadPayload['account_id']);
+                    $this->send((int) $chatId, $this->translator->get('files.upload_document_prompt', $language), $this->cancelKeyboard($userId, $language));
+                    break;
+                case 'file.upload_overwrite_confirm':
+                    $session = $this->sessions->get($userId);
+                    if ($session === null || $session['state'] !== 'waiting_for_upload_overwrite_confirmation') {
+                        throw new AppException('Telegram upload confirmation expired or no longer matches this upload.', 410, 'upload_confirmation_expired', [], 'files.upload');
+                    }
+                    $uploadPayload = $session['payload'];
+                    $challenge = (string) ($uploadPayload['overwrite_challenge'] ?? '');
+                    if ($challenge === '' || !hash_equals($challenge, (string) ($payload['challenge'] ?? '')) || (int) ($uploadPayload['account_id'] ?? 0) !== (int) ($payload['account_id'] ?? -1)) {
+                        throw new AppException('Telegram upload confirmation expired or no longer matches this upload.', 410, 'upload_confirmation_expired', [], 'files.upload');
+                    }
+                    unset($uploadPayload['overwrite_challenge']);
+                    $uploadPayload['collision'] = 'overwrite';
                     $this->sessions->set($userId, 'waiting_for_upload_document', $uploadPayload, (int) $uploadPayload['account_id']);
                     $this->send((int) $chatId, $this->translator->get('files.upload_document_prompt', $language), $this->cancelKeyboard($userId, $language));
                     break;
@@ -662,6 +687,7 @@ final class BotHandler
                 ['text' => $this->translator->get('section.usage', $language), 'web_app' => ['url' => $this->panelUrl('usage', $accountId)]],
                 ['text' => $this->translator->get('section.logs', $language), 'web_app' => ['url' => $this->panelUrl('logs', $accountId)]],
             ],
+            [['text' => $this->translator->get('section.host_info', $language), 'web_app' => ['url' => $this->panelUrl('usage', $accountId)]]],
             [
                 ['text' => $this->translator->get('section.php', $language), 'web_app' => ['url' => $this->panelUrl('php', $accountId)]],
                 ['text' => $this->translator->get('menu.security', $language), 'web_app' => ['url' => $this->panelUrl('security', $accountId)]],

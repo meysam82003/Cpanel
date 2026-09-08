@@ -19,7 +19,7 @@ Legend:
 | 3 | Token security | PASS-A | AES-256-GCM envelopes, key version/context, masked output, rotate/remove, encrypted expiring temporary mode. |
 | 4 | Main Telegram UI | PASS-A + LIVE | Required menus/commands, inline keyboard, short opaque callback state, sessions and Back navigation; Telegram rendering needs live client acceptance. |
 | 5 | Complete File Manager | PASS-A/C | Browse/sort/page/metadata/mutations, editor, archive and audit endpoints; cPanel operations capability-dependent. |
-| 6 | Telegram file upload | PASS-A + LIVE | Webhook dispatches encrypted owner-bound job; Bot API download, size/MIME/name/collision controls and cPanel upload handler. Live transfer needs bot/cPanel. |
+| 6 | Telegram file upload | PASS-A + LIVE | Webhook dispatches encrypted owner-bound job; Bot API download, size/MIME/name/collision controls, separate overwrite confirmation callback and cPanel upload handler. Live transfer needs bot/cPanel. |
 | 7 | File download | PASS-A + LIVE | Streamed cPanel preparation, max size/SHA-256, Telegram or expiring one-use secure link, cleanup; transfer integration conditional. |
 | 8 | Path security | PASS-A | Root-bound canonicalization, encoded traversal/control checks, boundary-safe ownership; unit/security tests. |
 | 9 | Trash system | PASS-A/C | Move to Trash, restore, permanent/empty confirmation and audit; provider capability/fallback handling. |
@@ -27,7 +27,7 @@ Legend:
 | 11 | Database Data Manager | PASS-A/C | Connection automation; table structure, CRUD, filter/page/order, bulk and CSV. Direct MySQL is provider-network dependent. |
 | 12 | SQL Console | PASS-A | Analyze/classify, one statement, read-only result pagination and byte/time limits, secret-safe optional history, encrypted saved queries/EXPLAIN, destructive confirmation and backup coordination. |
 | 13 | Database connection automation | PASS-A/C | Generated restricted DB user, privilege/remote-host coordination, encrypted connection, status/revoke; remote network conditional. |
-| 14 | SQL import/export | PASS-A/C | Queue-backed SQL/gzip import and SQL/CSV export, staging, checksum/size, artifact download and pre-import backup. |
+| 14 | SQL import/export | PASS-A/C | Queue-backed SQL/gzip/ZIP import and SQL/CSV export, staging, checksum/size, file-bound one-time import confirmation, artifact download and pre-import backup. |
 | 15 | Domains | PASS-C | Domain/subdomain/redirect/DNS CRUD, serial-bound DNS edit, warnings and confirmation; token/Feature Manager dependent. |
 | 16 | Email | PASS-C | Mailbox, password, quota, forwarder, autoresponder operations; mail-role dependent. |
 | 17 | SSL | PASS-C | Certificate status/inspection, AutoSSL eligibility and confirmed run; provider AutoSSL dependent. |
@@ -36,7 +36,7 @@ Legend:
 | 20 | Host usage/info | PASS-C | Disk, bandwidth, quotas, variables and one-tap status through cPanel capability. |
 | 21 | Log Viewer | PASS-A/C | Safe path discovery, bounded tail/search/response and no unrestricted fetch; available logs vary. |
 | 22 | PHP settings | PASS-C | Vhost versions and allowlisted INI update with preview/confirmation; MultiPHP provider dependent. |
-| 23 | Dangerous action protection | PASS-A | Typed preview/warning, one-time user/account/action/target confirmation, replay rejection and audit. |
+| 23 | Dangerous action protection | PASS-A | Typed preview/warning, one-time user/account/action/target confirmation including overwrite/import, replay rejection and audit. |
 | 24 | Auto backup before dangerous operations | PASS-A/C | Editor versions, destructive SQL/import/deploy/restore pre-backup paths; operation-specific capability errors. |
 | 25 | Deploy ZIP | PASS-A/C | Safe upload/manifest/checksum, eight durable stages, backup, isolated extraction, switch, health, rollback/recovery. |
 | 26 | Super Admin | PASS-A | Role-gated dashboard, health, users/hosts/plans/broadcast/audit/security/queue/settings/maintenance; no raw tokens. |
@@ -76,7 +76,7 @@ Legend:
 | 55 | Fullscreen UI | PASS-A + LIVE | Responsive safe-area shell, sticky navigation/dialog/editor fullscreen and Telegram viewport hooks; device matrix live. |
 | 56 | Mini App dashboard | PASS-A | User/plan/hosts/health/usage/notifications/favorites/recent activity and teaching empty states. |
 | 57 | Host cards | PASS-A/C | Label/domain/user/status/disk/SSL/API/last check plus open/test/health/rotate/remove/favorite actions. |
-| 58 | Visual File Manager | PASS-A/C | List/grid, breadcrumb, drag upload, selection tools, file actions, page/sort/hidden controls. |
+| 58 | Visual File Manager | PASS-A/C | List/grid, breadcrumb, drag upload, selection tools, file actions, page/sort/hidden controls, and explicit server-verified overwrite UI. |
 | 59 | Mini App Code Editor | PASS-A/C | Bundled Ace, syntax modes/themes, chunk loading, save/save-as/find/replace/history and version restore. |
 | 60 | Mini App Database Manager | PASS-A/C | Database cards plus users/privileges/Remote MySQL/import/export/connect actions. |
 | 61 | Mini App Table Browser | PASS-A/C | Rows/structure tabs, filter/order/pagination/visible columns, row/column/index/table operations. |
@@ -104,7 +104,7 @@ Legend:
 | 83 | Operation preview | PASS-A | Confirmations bind structured target/preview; deploy/SQL/delete/restore/cron/SSL/PHP flows render summaries. |
 | 84 | Accessibility | PASS-A + LIVE | Semantic controls/dialogs, labels, focus, contrast variables, touch targets and non-color warning cues; device audit live. |
 | 85 | Performance | PASS-A | Server pagination, bounded content/tail/result, lazy views, abort signals, debounced help/search, queue and metadata limits. |
-| 86 | Mini App API | PASS-A | 152 versioned routes with session auth, CSRF mutation protection, ownership, plan auth, rate limits, validation/audit. |
+| 86 | Mini App API | PASS-A | 154 versioned routes with session auth, CSRF mutation protection, ownership, plan auth, rate limits, validation/audit. |
 | 87 | Installer + Mini App | PASS-A + LIVE | Installer generates public/Mini App/API/Webhook config and registers menu button without extra input. |
 | 88 | BotFather post-install guide | PASS-A | `/telegram-setup` bilingual steps and ready-to-copy detected URL. |
 | 89 | Bot commands | PASS-A + LIVE | All required commands plus admin role gate; installer registers command list. |

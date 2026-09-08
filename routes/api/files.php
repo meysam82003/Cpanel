@@ -39,8 +39,23 @@ return static function (ApiKernel $api, Container $container): void {
     $api->route('POST', '/api/v1/hosts/{account}/files/new', static fn (Request $request, array $params, array $session): array => $files->createFile((int) $session['user_id'], (int) $params['account'], (string) $request->input('directory', '.'), (string) $request->input('name', '')), 40);
     $api->route('POST', '/api/v1/hosts/{account}/folders', static fn (Request $request, array $params, array $session): array => $files->createFolder((int) $session['user_id'], (int) $params['account'], (string) $request->input('directory', '.'), (string) $request->input('name', ''), (string) $request->input('permissions', '0755')), 40);
 
-    $api->route('POST', '/api/v1/hosts/{account}/files/upload', static function (Request $request, array $params, array $session) use ($files, $uploads, $plans): array {
+    $api->route('POST', '/api/v1/hosts/{account}/files/upload-overwrite-confirmation', static function (Request $request, array $params, array $session) use ($files, $confirmations): array {
+        $filenames = $request->input('filenames', []);
+        if (!is_array($filenames)) {
+            throw new AppException('Upload filenames must be a list.', 422, 'invalid_upload_count', [], 'files.upload');
+        }
         $userId = (int) $session['user_id'];
+        $accountId = (int) $params['account'];
+        $intent = $files->uploadConfirmationTarget($userId, $accountId, (string) $request->input('directory', '.'), array_values(array_map('strval', $filenames)));
+        return [
+            'nonce' => $confirmations->issue($userId, $accountId, 'file.upload_overwrite', $intent['target'], ['directory' => $intent['directory'], 'filenames' => $intent['filenames'], 'count' => count($intent['filenames'])], 900),
+            'expires_in' => 900,
+        ];
+    }, 15);
+
+    $api->route('POST', '/api/v1/hosts/{account}/files/upload', static function (Request $request, array $params, array $session) use ($files, $uploads, $plans, $confirmations): array {
+        $userId = (int) $session['user_id'];
+        $accountId = (int) $params['account'];
         $plan = $plans->plan($userId);
         $entry = $request->files['files'] ?? $request->files['file'] ?? null;
         if (!is_array($entry)) {
@@ -53,7 +68,13 @@ return static function (ApiKernel $api, Container $container): void {
                 $plans->upload($userId, $item['size']);
                 $received[] = $item;
             }
-            return $files->upload($userId, (int) $params['account'], (string) $request->input('directory', '.'), array_map(static fn (array $item): array => ['path' => $item['path'], 'name' => $item['name'], 'mime' => $item['mime']], $received), (string) $request->input('collision', 'reject'));
+            $directory = (string) $request->input('directory', '.');
+            $collision = (string) $request->input('collision', 'reject');
+            $intent = $files->uploadConfirmationTarget($userId, $accountId, $directory, array_values(array_map(static fn (array $item): string => (string) $item['name'], $received)));
+            if ($collision === 'overwrite') {
+                $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'file.upload_overwrite', $intent['target']);
+            }
+            return $files->upload($userId, $accountId, $directory, array_map(static fn (array $item): array => ['path' => $item['path'], 'name' => $item['name'], 'mime' => $item['mime']], $received), $collision);
         } finally {
             foreach ($received as $item) {
                 @unlink($item['path']);

@@ -105,4 +105,21 @@ SQL);
         unlink($outside);
         self::assertSame([], glob($this->tempRoot . '/*') ?: []);
     }
+
+    public function testImportConfirmationTargetBindsDatabaseFilenameAndSize(): void
+    {
+        $target = $this->transfers->importConfirmationTarget('alice_app', 'release.sql.gz', 4_096);
+
+        self::assertSame($target, $this->transfers->importConfirmationTarget('alice_app', 'release.sql.gz', 4_096));
+        self::assertNotSame($target, $this->transfers->importConfirmationTarget('alice_other', 'release.sql.gz', 4_096));
+        self::assertNotSame($target, $this->transfers->importConfirmationTarget('alice_app', 'other.sql.gz', 4_096));
+        self::assertNotSame($target, $this->transfers->importConfirmationTarget('alice_app', 'release.sql.gz', 4_097));
+
+        try {
+            $this->transfers->importConfirmationTarget('alice_app', 'image.jpg', 4_096);
+            self::fail('An unsupported import filename received a confirmation target.');
+        } catch (AppException $exception) {
+            self::assertSame('invalid_import_confirmation', $exception->safeCode);
+        }
+    }
 }

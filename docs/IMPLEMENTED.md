@@ -36,7 +36,7 @@ This inventory names the operational code paths delivered by the project. The on
 - Inline keyboards with short opaque callbacks; payloads stay in owner-bound, expiring, one-time server-side callback state.
 - Bot session state encrypted at rest and cleaned after expiry.
 - Host-add flow accepts only cPanel HTTPS host, username, and API token; the main password is explicitly rejected by design.
-- Contextual help, settings, host selection, host health, security overview, administrative entry, file browsing/download, and Telegram document upload flows.
+- Contextual help, settings, host selection, host health, explicit Host Information entry, security overview, administrative entry, file browsing/download, and Telegram document upload flows. Telegram overwrite uses a separate expiring owner/session-bound confirmation callback.
 - Asynchronous completion/failure notifications for queued uploads, downloads, archives, SQL transfer, backup, deployment, rollback, and admin broadcast.
 
 ## Telegram Mini App
@@ -54,7 +54,7 @@ This inventory names the operational code paths delivered by the project. The on
 - Server-side browse pagination, hidden files, name/size/time sorting, parent navigation, metadata, MIME and permissions display.
 - Create file/folder, text read in bounded chunks, syntax-aware Ace editor, find/replace/undo/redo/wrap/fullscreen, Save and Save As.
 - Move/rename, copy, recursive/danger confirmations, Trash, restore, empty Trash, and search.
-- Multi-file browser upload with size/count limits, verified MIME, collision policies, sanitized filenames, and secure temp cleanup.
+- Multi-file browser upload with size/count limits, duplicate-name rejection, verified MIME, collision policies, sanitized filenames, and secure temp cleanup. Overwrite requires a second explicit checkbox plus a server-issued one-time nonce bound to the canonical directory and exact filename set.
 - Telegram document upload dispatched from the webhook to an encrypted owner-bound queue payload, official Bot API download cap, deterministic collision handling, and cPanel upload.
 - Queued cPanel download streamed to managed storage with maximum size and SHA-256; Telegram delivery when size permits and an expiring single-use secure link otherwise.
 - File version creation before editor and sensitive writes, history, download, restore with a new pre-restore version, and cleanup.
@@ -68,7 +68,7 @@ This inventory names the operational code paths delivered by the project. The on
 - Row browsing with selected columns, stable pagination, filters/operators, order, row details, insert/update/delete, bulk delete, and CSV export.
 - SQL classification for read/write/destructive/admin statements; one-statement enforcement, comment/string-aware parsing, 100-row read-only result pages, a 200-row page ceiling, a 2 MiB response cap, and statement timeout.
 - SQL preview/analyze, execution, `EXPLAIN`, optional automatic backup for dangerous statements, target-bound confirmation, optional secret-safe fingerprint/type/result history, and explicitly saved encrypted queries. Migration 012 removes any legacy full query text from history.
-- Queue-backed `.sql`/`.sql.gz` import and SQL/CSV export, managed staging, size constraints, checksum validation, streaming parser/writer, downloadable result, and pre-import backup.
+- Queue-backed `.sql`/`.sql.gz`/`.zip` import and SQL/CSV export, managed staging, size constraints, checksum validation, streaming parser/writer, downloadable result, and pre-import backup. Import requires an expiring nonce bound to owner, account, database, filename, and byte size before queueing.
 
 ## cPanel hosting tools
 
@@ -119,4 +119,4 @@ This inventory names the operational code paths delivered by the project. The on
 
 ## Measured repository contracts
 
-The current static verifier checks at least 152 API routes, 128 rendered Mini App action names, 133 handlers, translation parity, 78 contextual topics, 12 migrations, required tables, queue/deployment/backup state contracts, official API compatibility policy, and absence of unfinished markers or token/private-key-shaped values in production files. Exact executed results are recorded in [TESTED.md](TESTED.md).
+The current static verifier checks at least 154 API routes, 128 rendered Mini App action names, 133 handlers, translation parity, 78 contextual topics, 12 migrations, required tables, queue/deployment/backup state contracts, official API compatibility policy, and absence of unfinished markers or token/private-key-shaped values in production files. Exact executed results are recorded in [TESTED.md](TESTED.md).

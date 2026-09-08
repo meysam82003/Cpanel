@@ -40,6 +40,7 @@ Verified release-readiness run:
 | Operation locks | Exclusive acquire, owner renewal, expiry/loss behavior |
 | Downloads | One-time link, preparation ownership, stream checksum/size, ready/consumed/expired states, cleanup |
 | Telegram uploads | File metadata limits, encrypted job payload, collision rules, persistent status and temp cleanup |
+| Upload/import confirmations | Browser overwrite nonce bound to canonical path/file set; Telegram double-confirm callback; SQL import nonce bound to database/file metadata; replay rejected |
 | Archive queue | Create/extract state, confirmation, handler success/failure and reconciliation |
 | Deployment | Intake transaction, package manifest, eight-stage state, backup integrity, atomic switch, health, rollback, lease crash recovery |
 | Backup | Inventory classification, file/directory/database/deployment restore contracts, tracker completion/failure/ownership/deduplication |
@@ -71,18 +72,19 @@ Verified release-readiness run:
 - Related help slugs exist, every required category exists, and contextual routes point to real topics.
 - Documented cPanel compatibility calls are present; known obsolete/nonexistent UAPI calls are absent.
 - Non-idempotent UAPI/API 2 calls cannot iterate multiple resolved IPs.
+- Every literal Telegram callback has a handler; web overwrite and SQL import confirmation routes are connected to their exact mutation consumers.
 - Production code contains no unfinished marker, Telegram-token-shaped value, or private key block.
 
 The latest pre-documentation result was:
 
 ```text
 php_files: 108
-api_routes: 152
+api_routes: 154
 miniapp_actions: 128
 action_handlers: 133
-translations_per_language: 517
-bot_translations_per_language: 114
-used_translation_keys: 336
+translations_per_language: 527
+bot_translations_per_language: 116
+used_translation_keys: 346
 help_topics: 78
 migrations: 12
 failures: 0

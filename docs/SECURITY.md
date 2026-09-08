@@ -17,7 +17,7 @@ The super admin can manage service users/plans/operations but cannot retrieve ra
 | Replay of Telegram auth | HMAC-derived nonce persisted once with expiry | `TelegramInitDataValidatorTest` and migration contract |
 | Session theft / CSRF | 256-bit opaque token, HMAC-hashed storage, expiry, user-agent binding, separate CSRF for mutations, rotation/logout/revoke | `MiniAppSessionTest`; API kernel contract |
 | Callback tampering | 22-character opaque ID; server-side encrypted payload; owner/action/expiry/one-use validation | `OneTimeStateTest` |
-| Destructive replay | One-time confirmation bound to user, account, action, target hash and preview; consumed atomically | `OneTimeStateTest`; route contracts |
+| Destructive replay | One-time confirmation bound to user, account, action, target hash and preview; consumed atomically. File overwrite binds canonical directory/file set, SQL import binds database/file metadata, and Telegram overwrite requires a second owner/session-bound callback | `OneTimeStateTest`; route/static contracts |
 | SSRF | HTTPS only, no embedded credentials/query/fragment/path, port allowlist, A/AAAA resolution, private/reserved/loopback/link-local/metadata block, DNS-to-cURL pinning, redirects disabled | `HostValidatorTest`; cPanel client configuration review |
 | DNS rebinding | Each request resolves under policy and uses `CURLOPT_RESOLVE` for the validated IP; redirects cannot escape | Host/client tests and static contract |
 | Unsafe private-host policy | Opt-in allows only RFC1918/ULA ranges; loopback/link-local/metadata stay blocked | `HostValidatorTest` |
@@ -27,7 +27,7 @@ The super admin can manage service users/plans/operations but cannot retrieve ra
 | SQL injection in manager | Identifiers quoted after server metadata/strict validation; row keys parameterized; filter/operator allowlists | Data-manager code contract and SQL safety tests |
 | Dangerous arbitrary SQL | One statement, classifier, read-only pagination and byte limits, destructive preview, one-time confirmation, optional/automatic backup; optional history stores no query text | `SqlSafetyAnalyzerTest`; coordinator/routes/static privacy contract |
 | Import path escape | Only uploaded or managed backup roots, realpath containment, exclusive staging creation, size and SHA-256 check | `SqlTransferServiceTest` |
-| Upload abuse | Count and byte caps, PHP upload error check, random temp name, `finfo` MIME, sanitized destination name, plan quota, cleanup | Upload receiver and Telegram upload tests |
+| Upload abuse | Count and byte caps, duplicate-name rejection, PHP upload error check, random temp name, `finfo` MIME, sanitized destination name, plan quota, overwrite/import confirmation, cleanup | Upload receiver, confirmation contracts and Telegram upload tests |
 | Download exfiltration | Owner-bound request, managed preparation path, max bytes, checksum, random one-time token, expiry/consume state | `DownloadServiceTest` |
 | API flooding | Atomic database buckets for global/user/route/public/webhook/download scopes; safe 429 and `Retry-After` | `RateLimiterTest`; API kernel |
 | Duplicate provider mutation | Non-idempotent UAPI/API 2 gets one attempt and the first validated IP only; async full backup persists before dispatch | cPanel compatibility/static tests; backup tests |

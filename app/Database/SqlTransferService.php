@@ -17,6 +17,16 @@ final class SqlTransferService
     ) {
     }
 
+    public function importConfirmationTarget(string $database, string $filename, int $bytes): string
+    {
+        $filename = basename(str_replace('\\', '/', trim($filename)));
+        if ($database === '' || $filename === '' || $bytes < 1 || !preg_match('/\.(?:sql|sql\.gz|zip)$/i', $filename)) {
+            throw new AppException('SQL import confirmation metadata is invalid.', 422, 'invalid_import_confirmation', [], 'database.import');
+        }
+        $intent = json_encode([$database, $filename, $bytes], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        return 'database-import:' . hash('sha256', $intent);
+    }
+
     public function import(int $userId, int $accountId, string $database, string $uploadedPath, bool $backupFirst = true): int
     {
         $real = realpath($uploadedPath);

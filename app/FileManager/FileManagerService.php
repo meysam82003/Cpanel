@@ -165,6 +165,29 @@ final class FileManagerService
         return ['directory' => $safeDirectory, 'files' => array_column($files, 'name'), 'cpanel' => $result['data']];
     }
 
+    /** @param list<string> $filenames
+     *  @return array{target:string,directory:string,filenames:list<string>}
+     */
+    public function uploadConfirmationTarget(int $userId, int $accountId, string $directory, array $filenames): array
+    {
+        [, , , $safeDirectory] = $this->context($userId, $accountId, $directory);
+        if ($filenames === [] || count($filenames) > 20) {
+            throw new AppException('Select between one and twenty files per upload.', 422, 'invalid_upload_count', [], 'files.upload');
+        }
+        $safeNames = [];
+        $seen = [];
+        foreach ($filenames as $filename) {
+            $safeName = $this->paths->sanitizeFilename(basename(str_replace('\\', '/', $filename)));
+            if (isset($seen[$safeName])) {
+                throw new AppException('The same filename cannot appear twice in one upload.', 422, 'duplicate_upload_filename', ['filename' => $safeName], 'files.upload');
+            }
+            $seen[$safeName] = true;
+            $safeNames[] = $safeName;
+        }
+        $intent = json_encode([$safeDirectory, $safeNames], JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+        return ['target' => 'upload-overwrite:' . hash('sha256', $intent), 'directory' => $safeDirectory, 'filenames' => $safeNames];
+    }
+
     /** @return array<string,mixed> */
     public function renameOrMove(int $userId, int $accountId, string $source, string $destination): array
     {

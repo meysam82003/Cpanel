@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Accounts\AccountRepository;
 use App\Core\AppException;
 use App\Core\Container;
 use App\Database\CpanelDatabaseService;
@@ -21,6 +22,7 @@ use App\Security\ConfirmationService;
 
 return static function (ApiKernel $api, Container $container): void {
     $cpanel = $container->get(CpanelDatabaseService::class);
+    $accounts = $container->get(AccountRepository::class);
     $connections = $container->get(DirectDatabaseConnectionService::class);
     $data = $container->get(DataManagerService::class);
     $sql = $container->get(SqlConsoleService::class);
@@ -244,8 +246,23 @@ return static function (ApiKernel $api, Container $container): void {
         return ['removed' => true];
     });
 
-    $api->route('POST', '/api/v1/hosts/{account}/databases/{database}/imports', static function (Request $request, array $params, array $session) use ($uploads, $transfers, $plans): array {
+    $api->route('POST', '/api/v1/hosts/{account}/databases/{database}/imports/confirmation', static function (Request $request, array $params, array $session) use ($accounts, $transfers, $plans, $confirmations): array {
         $userId = (int) $session['user_id'];
+        $accountId = (int) $params['account'];
+        $database = (string) $params['database'];
+        $filename = (string) $request->input('filename', '');
+        $bytes = (int) $request->input('bytes', 0);
+        $plans->feature($userId, 'database_manager');
+        $plans->upload($userId, $bytes);
+        $accounts->getOwned($userId, $accountId);
+        $target = $transfers->importConfirmationTarget($database, $filename, $bytes);
+        return ['nonce' => $confirmations->issue($userId, $accountId, 'database.import', $target, ['database' => $database, 'filename' => basename(str_replace('\\', '/', $filename)), 'bytes' => $bytes, 'backup_first' => filter_var($request->input('backup_first', true), FILTER_VALIDATE_BOOL)], 900), 'expires_in' => 900];
+    }, 15);
+
+    $api->route('POST', '/api/v1/hosts/{account}/databases/{database}/imports', static function (Request $request, array $params, array $session) use ($uploads, $transfers, $plans, $confirmations): array {
+        $userId = (int) $session['user_id'];
+        $accountId = (int) $params['account'];
+        $database = (string) $params['database'];
         $plans->feature($userId, 'database_manager');
         $entry = $request->files['file'] ?? null;
         if (!is_array($entry)) {
@@ -254,7 +271,9 @@ return static function (ApiKernel $api, Container $container): void {
         $plan = $plans->plan($userId);
         $file = $uploads->receive($entry, (int) $plan['max_upload_bytes'], ['sql', 'gz', 'zip']);
         try {
-            $job = $transfers->import($userId, (int) $params['account'], (string) $params['database'], $file['path'], filter_var($request->input('backup_first', true), FILTER_VALIDATE_BOOL));
+            $target = $transfers->importConfirmationTarget($database, (string) $file['name'], (int) $file['size']);
+            $confirmations->consume((string) $request->input('confirmation', ''), $userId, $accountId, 'database.import', $target);
+            $job = $transfers->import($userId, $accountId, $database, $file['path'], filter_var($request->input('backup_first', true), FILTER_VALIDATE_BOOL));
             $file = null;
             return ['job_id' => $job];
         } finally {
