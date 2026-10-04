@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\FileManager;
 
+use App\Http\PublicUrl;
 use App\Core\AppException;
 use App\Core\Database;
 use App\Core\Translator;
@@ -18,7 +19,7 @@ final class FileDownloadJobHandler implements JobHandler
         private readonly Database $database,
         private readonly TelegramClient $telegram,
         private readonly Translator $translator,
-        private readonly string $appUrl,
+        private readonly PublicUrl $urls,
         private readonly int $telegramMaxBytes = 50_000_000,
     ) {
     }
@@ -80,7 +81,7 @@ final class FileDownloadJobHandler implements JobHandler
             return 'telegram_document';
         }
 
-        $url = rtrim($this->appUrl, '/') . '/download/' . rawurlencode($token);
+        $url = $this->urls->download($token);
         $this->telegram->call('sendMessage', [
             'chat_id' => (int) $chatId,
             'text' => $this->translator->get('files.download_large', $language) . "\n" . $url,

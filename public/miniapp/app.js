@@ -1,4 +1,4 @@
-import {Api, ApiError, query} from './api.js';
+import {Api, ApiError, CONFIG, appUrl, query} from './api.js';
 import {setLanguage, language, t} from './i18n.js';
 
 const tg = window.Telegram?.WebApp || null;
@@ -64,6 +64,7 @@ class ManagerApp {
   }
 
   async boot() {
+    window.__tcpmBooted = true;
     this.setupTelegram();
     try {
       let authenticated = null;
@@ -169,7 +170,10 @@ class ManagerApp {
 
   navigate(route, params = {}, replace = false) {
     const url = new URL(location.href);
+    const entryRoute = url.searchParams.get('r');
     url.search = '';
+    // In query routing mode the page itself is addressed as index.php?r=/miniapp/.
+    if (CONFIG.mode === 'query') url.searchParams.set('r', entryRoute || '/miniapp/');
     url.searchParams.set('route', route);
     if (this.hostId) url.searchParams.set('host', String(this.hostId));
     for (const [key, value] of Object.entries(params)) if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
@@ -887,6 +891,9 @@ class ManagerApp {
 
   async handleAction(action, data, element = null) {
     const handlers = {
+      'fatal-retry': () => { this.api.clearSession(); location.reload(); },
+      'fatal-close': () => tg?.close?.(),
+      'fatal-open-bot': () => { const link = `https://t.me/${encodeURIComponent(CONFIG.bot)}?start=panel`; if (tg?.openTelegramLink && tg.platform !== 'unknown') tg.openTelegramLink(link); else location.href = link; },
       navigate: () => this.navigate(data.target),
       'more-menu': () => this.moreMenu(),
       'notification-read': () => this.markNotification(Number(data.id)),
@@ -1031,7 +1038,7 @@ class ManagerApp {
   openTrash() { const host = this.activeHost(), root = host?.root_path || `/home/${host?.cpanel_username || ''}`; this.navigate('files', {path: `${String(root).replace(/\/$/, '')}/.trash`}); }
   emptyTrash() { return this.confirmOperation({warningKey: 'warningTrash', action: 'trash.empty', target: 'trash', summary: t('emptyTrash'), perform: async confirmation => { await this.api.request(this.hostPath('/trash'), {method: 'DELETE', body: {confirmation}}); await this.render(); }}); }
   async downloadRemote(path) { const result = await this.api.request(this.hostPath('/download-links'), {method: 'POST', body: {path}}); await this.downloadWhenReady(result); }
-  async downloadWhenReady(result) { if (!result?.token || !Number(result?.job_id)) throw new ApiError({code: 'download_preparation_invalid', message: t('failed')}, 422); this.openInfo('download', `<div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`); await this.pollJob(Number(result.job_id), false); const anchor = document.createElement('a'); anchor.href = `/download/${encodeURIComponent(result.token)}`; anchor.rel = 'noopener'; anchor.download = result.filename || ''; document.body.appendChild(anchor); anchor.click(); anchor.remove(); this.closeDialog(); }
+  async downloadWhenReady(result) { if (!result?.token || !Number(result?.job_id)) throw new ApiError({code: 'download_preparation_invalid', message: t('failed')}, 422); this.openInfo('download', `<div id="job-progress">${this.progressHtml(0, t('queued'))}</div>`); await this.pollJob(Number(result.job_id), false); const anchor = document.createElement('a'); anchor.href = appUrl(`/download/${encodeURIComponent(result.token)}`); anchor.rel = 'noopener'; anchor.download = result.filename || ''; document.body.appendChild(anchor); anchor.click(); anchor.remove(); this.closeDialog(); }
   moveFile(path) { this.openForm('move', `<div class="field"><label>${escapeHtml(t('source'))}</label><input value="${escapeAttr(path)}" readonly></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(path)}" required dir="ltr"></div>`, 'move', async form => { await this.api.request(this.hostPath('/files/move'), {method: 'POST', body: {source: path, destination: form.elements.destination.value}}); this.closeDialog(); await this.render(); }); }
   copyFile(path) { this.openForm('copy', `<div class="field"><label>${escapeHtml(t('source'))}</label><input value="${escapeAttr(path)}" readonly></div><div class="field"><label>${escapeHtml(t('destination'))}</label><input name="destination" value="${escapeAttr(path)}" required dir="ltr"></div>`, 'copy', async form => { await this.api.request(this.hostPath('/files/copy'), {method: 'POST', body: {source: path, destination: form.elements.destination.value}}); this.closeDialog(); await this.render(); }); }
   deleteFile(path, directory) { this.openForm('remove', `<div class="notice ${directory ? 'danger' : 'warning'}"><strong>${escapeHtml(t(directory ? 'danger' : 'warning'))}</strong>${escapeHtml(t('warningFileDelete'))}</div><pre class="code">${escapeHtml(path)}</pre><label class="check"><input name="permanent" type="checkbox">${escapeHtml(t('permanentDelete'))}</label>`, 'remove', async form => { const permanent = form.elements.permanent.checked; let confirmation = null; if (permanent || directory) { const issued = await this.api.request('/api/v1/confirmations', {method: 'POST', body: {account_id: this.hostId, action: permanent ? 'file.delete_permanent' : 'file.delete_recursive', target: path, preview: {path, permanent, directory}}}); confirmation = issued.nonce; } await this.api.request(this.hostPath('/files'), {method: 'DELETE', body: {path, permanent, confirmation}}); this.closeDialog(); await this.render(); }, true); }
@@ -1530,7 +1537,18 @@ class ManagerApp {
   openContextHelp() { const map = {dashboard: 'start.overview', files: 'files.browse', editor: 'files.edit', databases: 'database.overview', database: 'database.tables', table: 'database.rows', sql: 'database.sql', domains: 'domains.overview', email: 'email.overview', ssl: 'ssl.overview', cron: 'cron.overview', backups: 'backup.overview', deploy: 'deploy.start', usage: 'usage.overview', logs: 'logs.overview', php: 'php.overview', security: 'security.token', settings: 'settings.overview', admin: 'admin.overview', help: 'help.using'}; this.navigate('help', {slug: map[this.route] || 'start.overview'}); }
   operationError(error) { this.haptic('error'); if (error?.name === 'AbortError') return; const apiError = error instanceof ApiError ? error : new ApiError({code: 'client_error', message: error?.message || t('clientError')}, 500); const guidance = apiError.guidance?.[language()] || {}; this.openInfo('errorTitle', `<div class="error-card"><h2>${escapeHtml(guidance.title || t('errorTitle'))}</h2>${guidance.causes?.length ? `<h3>${escapeHtml(t('likelyCauses'))}</h3><ul>${guidance.causes.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}${guidance.actions?.length ? `<h3>${escapeHtml(t('suggestedActions'))}</h3><ul>${guidance.actions.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : `<p>${escapeHtml(t('emptyGuidance'))}</p>`}<p class="muted">${escapeHtml(apiError.code)}${apiError.requestId ? ` · ${escapeHtml(t('requestId'))}: ${escapeHtml(apiError.requestId)}` : ''}</p>${apiError.helpSlug ? `<button class="button secondary" data-route="help" data-slug="${escapeAttr(apiError.helpSlug)}">${escapeHtml(t('help'))}</button>` : ''}</div>`); }
   renderError(error, retry = null) { if (error?.name === 'AbortError') return; const apiError = error instanceof ApiError ? error : new ApiError({code: 'client_error', message: error?.message || ''}, 500), guidance = apiError.guidance?.[language()] || {}; this.content.innerHTML = `<section class="error-card"><h2>${escapeHtml(guidance.title || t('errorTitle'))}</h2><p>${escapeHtml(apiError.message)}</p>${guidance.causes?.length ? `<ul>${guidance.causes.map(item => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}<div class="toolbar">${retry ? `<button class="button" id="retry-button">${escapeHtml(t('retry'))}</button>` : ''}${apiError.helpSlug ? `<button class="button secondary" data-route="help" data-slug="${escapeAttr(apiError.helpSlug)}">${escapeHtml(t('help'))}</button>` : ''}</div><small>${escapeHtml(apiError.code)} · ${escapeHtml(apiError.requestId || '')}</small></section>`; if (retry) $('#retry-button').onclick = retry; }
-  renderFatal(error) { this.setTitle('app'); const outside = error?.code === 'telegram_context_required'; this.content.innerHTML = `<section class="error-card"><h2>${escapeHtml(outside ? t('authOutside') : t('authExpired'))}</h2><p>${escapeHtml(error?.message || t('emptyGuidance'))}</p><div class="notice danger"><strong>فارسی / English</strong>${escapeHtml(t('warningToken'))}</div></section>`; document.querySelector('#app')?.setAttribute('aria-busy', 'false'); }
+  renderFatal(error) {
+    this.setTitle('app');
+    const code = String(error?.code || 'request_failed');
+    const status = Number(error?.status || 0);
+    const auth = ['session_expired', 'expired_init_data', 'invalid_init_data', 'init_data_replay', 'authentication_required', 'session_binding_failed', 'user_not_active'].includes(code);
+    const kind = code === 'telegram_context_required' ? 'Outside' : auth ? 'Session' : (code === 'network_error' || status === 0) ? 'Network' : (['api_route_unreachable', 'invalid_server_response', 'bootstrap_failed', 'not_installed'].includes(code) || status >= 500) ? 'Server' : 'Generic';
+    const details = [`code: ${code}`, status ? `HTTP ${status}` : '', error?.requestId ? `ref: ${error.requestId}` : '', error?.detail ? String(error.detail) : '', CONFIG.version ? `v${CONFIG.version} · ${CONFIG.mode}` : ''].filter(Boolean).join('\n');
+    const botLink = CONFIG.bot ? `https://t.me/${encodeURIComponent(CONFIG.bot)}?start=panel` : '';
+    this.content.innerHTML = `<section class="error-card" role="alert"><h2>${escapeHtml(t(`fatal${kind}Title`))}</h2><p>${escapeHtml(t(`fatal${kind}Body`))}</p>${kind === 'Generic' && error?.message ? `<p class="muted">${escapeHtml(error.message)}</p>` : ''}<div class="toolbar"><button type="button" class="button" data-action="fatal-retry">${escapeHtml(t('retry'))}</button>${botLink && kind !== 'Network' ? `<a class="button secondary" href="${escapeAttr(botLink)}" data-action="fatal-open-bot">${escapeHtml(t('openBot'))}</a>` : ''}${tg?.close && tg.platform !== 'unknown' ? `<button type="button" class="button secondary" data-action="fatal-close">${escapeHtml(t('closeApp'))}</button>` : ''}</div><details><summary class="muted">${escapeHtml(t('technicalDetails'))}</summary><pre class="code">${escapeHtml(details)}</pre></details></section>`;
+    document.querySelector('#bottom-nav').innerHTML = '';
+    document.querySelector('#app')?.setAttribute('aria-busy', 'false');
+  }
   sessionLost() { clearTimeout(this.rotationTimer); this.api.clearSession(); this.hideMainButton(); this.renderFatal(new ApiError({code: 'session_expired', message: t('authExpired')}, 401)); }
 }
 

@@ -106,7 +106,7 @@ Legend:
 | 85 | Performance | PASS-A | Server pagination, bounded content/tail/result, lazy views, abort signals, debounced help/search, queue and metadata limits. |
 | 86 | Mini App API | PASS-A | 154 versioned routes with session auth, CSRF mutation protection, ownership, plan auth, rate limits, validation/audit. |
 | 87 | Installer + Mini App | PASS-A + LIVE | Installer generates public/Mini App/API/Webhook config and registers menu button without extra input. |
-| 88 | BotFather post-install guide | PASS-A | `/telegram-setup` bilingual steps and ready-to-copy detected URL. |
+| 88 | BotFather post-install guide | PASS-A | `/setup` (alias `/telegram-setup`) shows status, Mini App URL, cron commands and one-click Telegram repair. |
 | 89 | Bot commands | PASS-A + LIVE | All required commands plus admin role gate; installer registers command list. |
 | 90 | Start screen | PASS-A + LIVE | Required post-onboarding menu and one-tap Web App button. |
 | 91 | Inline education | PASS-A | Contextual help/info for TRUNCATE, privileges, Remote MySQL, Cron, AutoSSL and Rollback. |

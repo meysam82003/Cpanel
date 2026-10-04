@@ -4,47 +4,92 @@ declare(strict_types=1);
 
 namespace App\Telegram;
 
+use App\Core\Env;
 use CURLFile;
 
 final class TelegramClient
 {
+    public const DEFAULT_API_BASE = 'https://api.telegram.org';
+
+    private readonly string $apiBase;
+    private readonly ?string $proxy;
+
     public function __construct(
         private readonly string $token,
         private readonly int $timeout = 30,
+        ?string $apiBase = null,
+        ?string $proxy = null,
     ) {
-        if (!preg_match('/^\d{6,12}:[A-Za-z0-9_-]{30,}$/', $token)) {
+        if (!self::isValidToken($token)) {
             throw new TelegramApiException('The Telegram bot token format is invalid.', 'invalid_bot_token', [], 422);
         }
+        $this->apiBase = self::normalizeApiBase($apiBase);
+        $this->proxy = self::normalizeProxy($proxy);
+    }
+
+    /** Builds a client honouring the optional TELEGRAM_API_URL / TELEGRAM_PROXY settings. */
+    public static function fromEnv(?string $token = null): self
+    {
+        return new self($token ?? Env::require('TELEGRAM_BOT_TOKEN'), 30, Env::get('TELEGRAM_API_URL'), Env::get('TELEGRAM_PROXY'));
+    }
+
+    public static function isValidToken(string $token): bool
+    {
+        return preg_match('/^\d{6,12}:[A-Za-z0-9_-]{30,}$/', $token) === 1;
+    }
+
+    /** Accepts an empty value (official API) or an https:// Bot API server / reverse proxy. */
+    public static function normalizeApiBase(?string $value): string
+    {
+        $value = rtrim(trim((string) $value), '/');
+        if ($value === '') {
+            return self::DEFAULT_API_BASE;
+        }
+        $parts = parse_url($value);
+        if (!is_array($parts) || ($parts['scheme'] ?? '') !== 'https' || empty($parts['host']) || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user'])) {
+            throw new TelegramApiException('The Telegram API URL must be an https:// address.', 'invalid_telegram_api_url', [], 422);
+        }
+        return $value;
+    }
+
+    /** Accepts an empty value, or an http(s)/socks5(h) proxy such as socks5h://127.0.0.1:1080. */
+    public static function normalizeProxy(?string $value): ?string
+    {
+        $value = trim((string) $value);
+        if ($value === '') {
+            return null;
+        }
+        $parts = parse_url($value);
+        if (!is_array($parts) || !in_array(strtolower((string) ($parts['scheme'] ?? '')), ['http', 'https', 'socks5', 'socks5h', 'socks4', 'socks4a'], true) || empty($parts['host']) || empty($parts['port'])) {
+            throw new TelegramApiException('The Telegram proxy must look like socks5h://host:port or http://host:port.', 'invalid_telegram_proxy', [], 422);
+        }
+        return $value;
     }
 
     /** @param array<string,mixed> $parameters
      *  @return mixed
      */
-    public function call(string $method, array $parameters = []): mixed
+    public function call(string $method, array $parameters = [], ?int $timeout = null): mixed
     {
         if (!preg_match('/^[A-Za-z][A-Za-z0-9]{0,63}$/', $method)) {
             throw new TelegramApiException('Invalid Telegram API method.', 'invalid_telegram_method', [], 500);
         }
-        $curl = curl_init('https://api.telegram.org/bot' . $this->token . '/' . $method);
-        curl_setopt_array($curl, [
+        $curl = curl_init($this->apiBase . '/bot' . $this->token . '/' . $method);
+        curl_setopt_array($curl, $this->transportOptions() + [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => $this->normalizeParameters($parameters),
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_CONNECTTIMEOUT => 8,
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => max(5, $timeout ?? $this->timeout),
             CURLOPT_HTTPHEADER => ['Accept: application/json'],
-            CURLOPT_USERAGENT => 'TelegramCpanelManager/1.0',
         ]);
         $response = curl_exec($curl);
         $errorNumber = curl_errno($curl);
+        $errorText = curl_error($curl);
         $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
         curl_close($curl);
         if ($response === false || $errorNumber !== 0) {
-            throw new TelegramApiException('Telegram could not be reached securely.', 'telegram_network_error', ['curl_errno' => $errorNumber]);
+            throw new TelegramApiException('Telegram could not be reached securely (' . ($errorText !== '' ? $errorText : 'cURL error ' . $errorNumber) . ').', 'telegram_network_error', ['curl_errno' => $errorNumber]);
         }
         try {
             $decoded = json_decode($response, true, 128, JSON_THROW_ON_ERROR);
@@ -79,18 +124,13 @@ final class TelegramClient
         }
         $bytes = 0;
         $overflow = false;
-        $curl = curl_init('https://api.telegram.org/file/bot' . $this->token . '/' . $path);
-        curl_setopt_array($curl, [
+        $curl = curl_init($this->apiBase . '/file/bot' . $this->token . '/' . $path);
+        curl_setopt_array($curl, $this->transportOptions() + [
             CURLOPT_HTTPGET => true,
-            CURLOPT_CONNECTTIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 10,
             CURLOPT_TIMEOUT => max(60, $this->timeout),
-            CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_MAXREDIRS => 0,
-            CURLOPT_SSL_VERIFYPEER => true,
-            CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
-            CURLOPT_USERAGENT => 'TelegramCpanelManager/1.0',
             CURLOPT_WRITEFUNCTION => static function ($curlHandle, string $chunk) use ($handle, $maxBytes, &$bytes, &$overflow): int {
                 if ($bytes + strlen($chunk) > $maxBytes) {
                     $overflow = true;
@@ -119,6 +159,25 @@ final class TelegramClient
         }
         @chmod($destination, 0600);
         return ['bytes' => $bytes, 'file_path' => $path];
+    }
+
+    /** @return array<int,mixed> */
+    private function transportOptions(): array
+    {
+        $options = [
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_USERAGENT => 'TelegramCpanelManager/1.1',
+        ];
+        if ($this->proxy !== null) {
+            $options[CURLOPT_PROXY] = $this->proxy;
+            if (str_starts_with(strtolower($this->proxy), 'socks5h://') && defined('CURLPROXY_SOCKS5_HOSTNAME')) {
+                $options[CURLOPT_PROXYTYPE] = CURLPROXY_SOCKS5_HOSTNAME;
+            }
+        }
+        return $options;
     }
 
     /** @param array<string,mixed> $parameters

@@ -41,7 +41,7 @@ final class ApiKernel
     public function route(string $method, string $pattern, callable $handler, int $perMinute = 120, bool $maintenanceAllowed = false, bool $countOperation = true): void
     {
         $this->router->add($method, $pattern, function (Request $request, array $params) use ($handler, $perMinute, $maintenanceAllowed, $countOperation, $pattern): Response {
-            $token = $this->bearer($request->header('authorization'));
+            $token = $this->bearer($request->header('authorization'), $request->header('x-session-token'));
             $session = $this->sessions->authenticate($token, $request->header('x-csrf-token'), $request->method, $request->header('user-agent'));
             $userId = (int) $session['user_id'];
             $this->currentUserId = $userId;
@@ -76,12 +76,16 @@ final class ApiKernel
         return $this->router->lastMatchedPattern();
     }
 
-    private function bearer(?string $authorization): string
+    private function bearer(?string $authorization, ?string $sessionHeader = null): string
     {
-        if ($authorization === null || !preg_match('/^Bearer\s+([A-Za-z0-9_-]{40,64})$/i', trim($authorization), $match)) {
-            throw new AppException('A valid Bearer session is required.', 401, 'authentication_required');
+        if ($authorization !== null && preg_match('/^Bearer\s+([A-Za-z0-9_-]{40,64})$/i', trim($authorization), $match)) {
+            return $match[1];
         }
-        return $match[1];
+        // Fallback for hosts whose web server strips the Authorization header.
+        if ($sessionHeader !== null && preg_match('/^[A-Za-z0-9_-]{40,64}$/', trim($sessionHeader))) {
+            return trim($sessionHeader);
+        }
+        throw new AppException('A valid Bearer session is required.', 401, 'authentication_required');
     }
 
     private function maintenance(): bool

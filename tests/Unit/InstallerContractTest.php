@@ -8,18 +8,21 @@ use App\Installer\InstallerService;
 use App\Installer\InstallerException;
 use PHPUnit\Framework\TestCase;
 use ReflectionMethod;
-use RuntimeException;
 
 final class InstallerContractTest extends TestCase
 {
-    public function testExactlyFiveUserSuppliedFieldsAreRendered(): void
+    public function testExactlyFiveOperatorValuesAreRequired(): void
     {
-        $source = file_get_contents(dirname(__DIR__, 2) . '/public/install.php');
+        $source = file_get_contents(dirname(__DIR__, 2) . '/app/Web/InstallerController.php');
         self::assertIsString($source);
-        preg_match_all('/<input\b[^>]*\bname="([^"]+)"/i', $source, $matches);
-        $fields = array_values(array_filter($matches[1], static fn (string $name): bool => $name !== '_csrf'));
-        sort($fields);
-        self::assertSame(['bot_token', 'db_name', 'db_password', 'db_username', 'super_admin_id'], $fields);
+        preg_match_all('/<input\b[^>]*\bname="([^"]+)"[^>]*\brequired\b/i', $source, $matches);
+        $required = $matches[1];
+        sort($required);
+        self::assertSame(['bot_token', 'db_name', 'db_password', 'db_username', 'super_admin_id'], $required);
+        preg_match_all('/<input\b[^>]*\bname="([^"]+)"/i', $source, $all);
+        $optional = array_values(array_diff($all[1], $required, ['_csrf']));
+        sort($optional);
+        self::assertSame(['db_host', 'telegram_api_url', 'telegram_proxy', 'url_mode'], $optional);
     }
 
     public function testInputValidationAcceptsOnlyWellFormedFiveValues(): void
@@ -37,21 +40,24 @@ final class InstallerContractTest extends TestCase
         self::assertSame('panel_database', $result['db_name']);
     }
 
-    public function testPublicUrlRequiresHttpsAndValidPort(): void
+    public function testOptionalAdvancedSettingsAreValidated(): void
     {
         $installer = new InstallerService(dirname(__DIR__, 2));
-        $method = new ReflectionMethod($installer, 'detectUrls');
-        $result = $method->invoke($installer, ['HTTPS' => 'on', 'SERVER_PORT' => '443', 'HTTP_HOST' => 'panel.example.com', 'REQUEST_URI' => '/manager/install']);
-        self::assertSame('https://panel.example.com/manager', $result['app_url']);
-        $this->expectException(RuntimeException::class);
-        $method->invoke($installer, ['HTTPS' => 'on', 'HTTP_HOST' => 'panel.example.com:99999', 'REQUEST_URI' => '/install']);
+        $method = new ReflectionMethod($installer, 'validateInput');
+        $base = ['bot_token' => '123456:' . str_repeat('A', 32), 'super_admin_id' => '1', 'db_username' => 'u', 'db_password' => 'p', 'db_name' => 'd'];
+        $result = $method->invoke($installer, $base + ['db_host' => 'mysql.internal:3307', 'telegram_proxy' => 'socks5h://10.0.0.2:1080']);
+        self::assertSame('mysql.internal', $result['db_host']);
+        self::assertSame(3307, $result['db_port']);
+        self::assertSame('socks5h://10.0.0.2:1080', $result['telegram_proxy']);
+        $this->expectException(InstallerException::class);
+        $method->invoke($installer, $base + ['db_host' => 'bad host!']);
     }
 
     public function testPublicInstallerNeverRendersRawExceptionMessages(): void
     {
-        $source = file_get_contents(dirname(__DIR__, 2) . '/public/install.php');
+        $source = file_get_contents(dirname(__DIR__, 2) . '/app/Web/InstallerController.php');
         self::assertIsString($source);
-        self::assertStringNotContainsString('$error = $exception->getMessage()', $source);
+        self::assertStringNotContainsString('getMessage()', $source);
         self::assertStringContainsString("'message_fa'", $source);
         self::assertStringContainsString("'message_en'", $source);
         self::assertStringContainsString("'request_id'", $source);

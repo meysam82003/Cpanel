@@ -6,7 +6,7 @@ This inventory names the operational code paths delivered by the project. The on
 
 | Capability | Implementation evidence |
 |---|---|
-| Exactly five installer inputs | `public/install.php`; field contract enforced by unit and static tests |
+| Exactly five required installer inputs | `app/Web/InstallerController.php` (served by `index.php` on any folder); required/optional field contract enforced by unit and static tests |
 | Server preflight | PHP version, required extensions, project write access, HTTPS and detected public hostname |
 | Telegram verification | `getMe`, `setWebhook`, `getWebhookInfo`, `setMyCommands`, `setChatMenuButton` |
 | Automatic configuration | Secure random app/encryption/webhook/callback/session/cron keys; atomic `.env`; no user-supplied extra settings |

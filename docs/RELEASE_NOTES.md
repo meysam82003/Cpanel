@@ -1,3 +1,45 @@
+# Telegram cPanel Manager v1.1.0
+
+## فارسی
+
+بازطراحی کامل نصب، مسیریابی، اتصال ربات و بارگذاری Mini App؛ بدون نیاز به هیچ تنظیم پوشه.
+
+### نصب بدون تنظیم
+
+- یک Front Controller واحد (`index.php`) پوشهٔ نصب، آدرس عمومی، HTTPS پشت پروکسی/Cloudflare و روش آدرس‌دهی را در هر درخواست خودش تشخیص می‌دهد؛ در ریشهٔ دامنه، هر زیرپوشه، با یا بدون `mod_rewrite` و با Document Root روی `public` کار می‌کند.
+- `.htaccess` جدید بدون `RewriteBase` و بدون حلقهٔ Redirect؛ در نسخهٔ قبل روی Apache صفحهٔ `/install` به خودش Redirect می‌شد و CSS/JS های Mini App به‌جای فایل، JSON خطا برمی‌گرداندند.
+- نصب‌کننده در همان آدرسی که باز می‌کنید ظاهر می‌شود، تشخیص خودکار Telegram ID مدیر، امتحان خودکار پیشوند `cpuser_` دیتابیس و `127.0.0.1`، پیدا کردن مسیر صحیح PHP خط فرمان برای Cron، تنظیمات اختیاری پروکسی تلگرام و Bot API واسط، پیام خوش‌آمد و حفظ کلیدهای قبلی هنگام نصب دوباره.
+- صفحهٔ جدید `/setup` برای وضعیت، عیب‌یابی، تعمیر خودکار پس از جابجایی پوشه/دامنه و تغییر Webhook/Polling.
+
+### ربات
+
+- رفع اصلی «استارت نخوردن»: اتصال دیتابیس روی UTC قفل شد؛ روی سرورهای با منطقهٔ زمانی ایران دکمه‌ها و نشست‌ها فوراً منقضی می‌شدند.
+- خطای یک پیام دیگر با پاسخ غیر 200 به تلگرام برگردانده نمی‌شود (که باعث تکرار بی‌پایان و قفل صف می‌شد)؛ کاربر یک پاسخ امن دریافت می‌کند.
+- حالت Polling از طریق Cron، سوییچ خودکار در صورت خرابی Webhook، بازگردانی خودکار Webhook تغییر یافته، Web cron، دستورات فارسی/انگلیسی.
+
+### Mini App
+
+- حذف وابستگی به `telegram.org/js` (در ایران فیلتر است و باعث باز شدن پنل بدون احراز هویت می‌شد)؛ پل داخلی WebApp جایگزین شد.
+- انتقال هدر Authorization در PHP-FPM/CGI و هدر جایگزین `X-Session-Token`.
+- بارگذاری مجدد Mini App دیگر خطای «already used» نمی‌دهد؛ اعتبار initData پیش‌فرض ۲۴ ساعت.
+- آدرس API، دانلود و ناوبری در هر سه روش آدرس‌دهی؛ Asset های نسخه‌دار ضد Cache قدیمی؛ صفحهٔ خطای دقیق با کد و راه‌حل به‌جای پیام گمراه‌کنندهٔ «Session منقضی شده».
+
+## English
+
+A full redesign of installation, routing, bot delivery and Mini App loading — no folder configuration is needed anywhere.
+
+- Single front controller with runtime detection of folder, public URL, HTTPS (proxies/Cloudflare) and routing mode (rewrite, PATH_INFO, `?r=`); new loop-free `.htaccess` without `RewriteBase` (v1.0.x looped on `/install` and served Mini App assets as JSON errors on Apache).
+- Installer on the opened address, admin-ID detection, automatic `cpuser_` prefix and `127.0.0.1` retries, CLI PHP discovery for cron, optional Telegram proxy / Bot API relay, welcome message, key preservation on re-run, and a new `/setup` page for diagnostics and one-click repair after moving.
+- Bot: UTC-pinned database sessions (fixes instantly expiring buttons/sessions on +03:30 servers), failed updates no longer trigger endless Telegram retries, cron polling transport with automatic webhook failover/restore, web cron, localized commands.
+- Mini App: self-hosted WebApp bridge instead of `telegram.org/js`, Authorization header recovery plus `X-Session-Token`, reload-safe initData (24 h freshness), routing-aware API/download/navigation, versioned assets, and an actionable diagnostics screen.
+
+### Verification
+
+- PHPUnit (154 tests), static contract verifier and PHP lint pass.
+- End-to-end on Apache 2.4 + MariaDB (server time zone `+03:30`) with a TLS fake Bot API: installation in a sub-folder (clean URLs) and in a folder without `mod_rewrite` (`index.php/…`), `/start` and button callbacks, Mini App authentication in all three routing modes (Bearer and `X-Session-Token`), CLI and web cron, automatic webhook→polling failover with backlog delivery, and Setup repair after moving the folder.
+
+---
+
 # Telegram cPanel Manager v1.0.1
 
 ## فارسی

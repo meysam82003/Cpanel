@@ -16,7 +16,8 @@ use App\Plans\PlanGuard;
 use App\Security\MiniAppSessionService;
 use App\Security\RateLimiter;
 use App\Support\ErrorGuidanceService;
-use App\Telegram\BotHandler;
+use App\Queue\CronRunner;
+use App\Telegram\UpdateProcessor;
 
 final class Application
 {
@@ -76,8 +77,12 @@ final class Application
             return Response::json(['ok' => true, 'data' => ['status' => 'healthy', 'version' => Config::app('version'), 'installed' => is_file($this->container->root . '/storage/installed.lock'), 'time' => gmdate('c')]]);
         }
 
-        if (preg_match('#^/webhook/([A-Za-z0-9_-]{40,64})$#', $request->path, $match)) {
+        if (preg_match('#^/webhook/([A-Za-z0-9_-]{40,64})/?$#', $request->path, $match)) {
             return $this->webhook($request, $match[1]);
+        }
+
+        if (preg_match('#^/cron/([A-Za-z0-9_-]{40,64})/?$#', $request->path, $match)) {
+            return $this->webCron($request, $match[1]);
         }
 
         if ($request->method === 'GET' && preg_match('#^/download/([A-Za-z0-9_-]{40,64})$#', $request->path, $match)) {
@@ -94,36 +99,50 @@ final class Application
 
     private function webhook(Request $request, string $pathSecret): Response
     {
+        $configured = Env::require('WEBHOOK_SECRET');
+        if (!hash_equals($configured, $pathSecret)) {
+            throw new AppException('Webhook authentication failed.', 404, 'webhook_auth_failed');
+        }
+        if ($request->method === 'GET' || $request->method === 'HEAD') {
+            // Lets an administrator confirm in a browser that the address reaches this installation.
+            return Response::json(['ok' => true, 'data' => ['endpoint' => 'telegram-webhook', 'accepts' => 'POST']]);
+        }
         if ($request->method !== 'POST') {
             throw new AppException('Telegram webhook accepts POST only.', 405, 'method_not_allowed');
         }
-        $configured = Env::require('WEBHOOK_SECRET');
-        $headerSecret = $request->header('x-telegram-bot-api-secret-token') ?? '';
-        if (!hash_equals($configured, $pathSecret) || !hash_equals($configured, $headerSecret)) {
+        // Telegram always sends the secret header; a proxy that strips it must not
+        // silence the bot, while a wrong value is always rejected.
+        $headerSecret = $request->header('x-telegram-bot-api-secret-token');
+        if ($headerSecret !== null && !hash_equals($configured, $headerSecret)) {
             throw new AppException('Webhook authentication failed.', 404, 'webhook_auth_failed');
         }
-        if (!str_contains(strtolower($request->header('content-type') ?? ''), 'application/json')) {
-            throw new AppException('Telegram webhook requires JSON.', 415, 'webhook_content_type');
-        }
         $this->container->get(RateLimiter::class)->hit('telegram.webhook.ip', $request->ip ?? 'unknown', 600, 60);
-        $updateId = filter_var($request->body['update_id'] ?? null, FILTER_VALIDATE_INT);
-        if ($updateId === false || $updateId < 0) {
-            throw new AppException('Telegram update ID is invalid.', 400, 'invalid_telegram_update');
+        $update = $request->body;
+        if ($update === [] && $request->rawBody !== '') {
+            $decoded = json_decode($request->rawBody, true);
+            $update = is_array($decoded) ? $decoded : [];
         }
-        $inserted = $this->database->execute("INSERT IGNORE INTO telegram_updates (update_id, status) VALUES (?, 'processing')", [(int) $updateId])->rowCount();
-        if ($inserted === 0) {
-            return Response::json(['ok' => true, 'duplicate' => true]);
+        $result = $this->container->get(UpdateProcessor::class)->process($update);
+        return Response::json(['ok' => true, 'result' => $result]);
+    }
+
+    private function webCron(Request $request, string $secret): Response
+    {
+        if (!hash_equals(Env::require('CRON_SECRET'), $secret)) {
+            throw new AppException('The requested endpoint was not found.', 404, 'not_found');
+        }
+        $this->container->get(RateLimiter::class)->hit('cron.web', $request->ip ?? 'unknown', 6, 60);
+        $lock = CronRunner::lock($this->container->root);
+        if ($lock === null) {
+            return Response::json(['ok' => true, 'data' => ['skipped' => 'already_running']]);
         }
         try {
-            $this->container->get(BotHandler::class)->handle($request->body);
-            $this->database->execute("UPDATE telegram_updates SET status = 'processed', processed_at = CURRENT_TIMESTAMP WHERE update_id = ?", [(int) $updateId]);
-        } catch (\Throwable $exception) {
-            $code = $exception instanceof AppException ? $exception->safeCode : 'bot_update_failed';
-            $this->database->execute('DELETE FROM telegram_updates WHERE update_id = ?', [(int) $updateId]);
-            $this->logger->error($exception, ['update_id' => (int) $updateId, 'error_code' => $code]);
-            throw $exception;
+            @set_time_limit(90);
+            $heartbeat = (new CronRunner($this->container))->run(25, 'web');
+        } finally {
+            CronRunner::unlock($lock);
         }
-        return Response::json(['ok' => true]);
+        return Response::json(['ok' => true, 'data' => ['ran_at' => $heartbeat['ran_at'], 'processed_jobs' => $heartbeat['processed_jobs'], 'telegram_updates' => $heartbeat['telegram_updates']]]);
     }
 
     private function errorResponse(AppException $exception, string $requestId): Response
@@ -223,6 +242,9 @@ final class Application
         }
         if (str_starts_with($request->path, '/download/')) {
             return '/download/{token}';
+        }
+        if (str_starts_with($request->path, '/cron/')) {
+            return '/cron/{secret}';
         }
         return $request->path === '/health' ? '/health' : 'unmatched';
     }

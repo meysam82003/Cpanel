@@ -73,7 +73,10 @@ use App\Telegram\BotSessionService;
 use App\Telegram\CallbackStateService;
 use App\Telegram\TelegramClient;
 use App\Usage\UsageService;
+use App\Http\PublicUrl;
 use App\Http\UploadReceiver;
+use App\Telegram\TelegramSetupService;
+use App\Telegram\UpdateProcessor;
 use App\Support\ErrorGuidanceService;
 
 final class Container
@@ -144,19 +147,22 @@ final class Container
             ConfirmationService::class => new ConfirmationService($this->get(Database::class)),
             RateLimiter::class => new RateLimiter($this->get(Database::class)),
             MiniAppSessionService::class => new MiniAppSessionService($this->get(Database::class), Env::require('SESSION_SECRET'), Env::int('MINIAPP_SESSION_TTL', 3600)),
-            TelegramInitDataValidator::class => new TelegramInitDataValidator($this->get(Database::class), Env::require('TELEGRAM_BOT_TOKEN'), Env::int('TELEGRAM_INITDATA_TTL', 900)),
+            TelegramInitDataValidator::class => new TelegramInitDataValidator($this->get(Database::class), Env::require('TELEGRAM_BOT_TOKEN'), Env::int('TELEGRAM_INITDATA_TTL', 86400)),
             PlanGuard::class => new PlanGuard($this->get(Database::class)),
             UserSettingsService::class => new UserSettingsService($this->get(Database::class), $this->get(UserRepository::class)),
             SecurityCenterService::class => new SecurityCenterService($this->get(Database::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(MiniAppSessionService::class)),
             AdminService::class => new AdminService($this->get(Database::class), $this->get(QueueService::class), $this->get(AuditLogger::class), $this->get(TelegramClient::class), $this->get(Crypto::class), $this->root),
             HelpService::class => new HelpService($this->get(Database::class)),
-            TelegramClient::class => new TelegramClient(Env::require('TELEGRAM_BOT_TOKEN')),
+            TelegramClient::class => TelegramClient::fromEnv(),
+            PublicUrl::class => PublicUrl::fromEnv(),
+            TelegramSetupService::class => new TelegramSetupService($this->get(TelegramClient::class), $this->get(Database::class), $this->get(PublicUrl::class), Env::require('WEBHOOK_SECRET')),
+            UpdateProcessor::class => new UpdateProcessor($this->get(Database::class), fn (): BotHandler => $this->get(BotHandler::class), $this->get(Logger::class)),
             BotSessionService::class => new BotSessionService($this->get(Database::class), $this->get(Crypto::class)),
             CallbackStateService::class => new CallbackStateService($this->get(Database::class), Env::require('CALLBACK_SECRET')),
             NotificationService::class => new NotificationService($this->get(Database::class), $this->get(Translator::class), $this->get(TelegramClient::class)),
             UploadReceiver::class => new UploadReceiver($this->root . '/storage/temp'),
             ErrorGuidanceService::class => new ErrorGuidanceService(),
-            BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), rtrim((string) Config::app('url'), '/') . '/miniapp/', $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(TelegramUploadService::class)),
+            BotHandler::class => new BotHandler($this->get(Database::class), $this->get(TelegramClient::class), $this->get(UserRepository::class), $this->get(AccountRepository::class), $this->get(AccountService::class), $this->get(UserSettingsService::class), $this->get(SecurityCenterService::class), $this->get(AdminService::class), $this->get(HelpService::class), $this->get(Translator::class), $this->get(BotSessionService::class), $this->get(CallbackStateService::class), $this->get(ConfirmationService::class), $this->get(RateLimiter::class), $this->get(PublicUrl::class), $this->get(FileManagerService::class), $this->get(DownloadService::class), $this->get(TelegramUploadService::class)),
             CleanupService::class => new CleanupService($this->get(Database::class), $this->root . '/storage'),
             QueueWorker::class => new QueueWorker($this->get(QueueService::class), $this->jobHandlers(), $this->get(Logger::class), $this->get(DeploymentRecoveryService::class), $this->get(BackupJobTracker::class)),
             default => throw new AppException('Service is not registered: ' . $id, 500, 'service_not_registered'),
@@ -171,7 +177,7 @@ final class Container
         return [
             'sql.import' => new SqlImportJobHandler($this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(Database::class), $this->get(AuditLogger::class), $this->root . '/storage/temp', $this->root . '/storage/backups'),
             'sql.export' => new SqlExportJobHandler($this->get(DirectDatabaseConnectionService::class), $this->get(DatabaseDumpWriter::class), $this->get(Database::class), $this->get(AuditLogger::class), $this->root . '/storage/downloads'),
-            'file.download' => new FileDownloadJobHandler($this->get(DownloadService::class), $this->get(Database::class), $this->get(TelegramClient::class), $this->get(Translator::class), (string) Config::app('url'), Env::int('TELEGRAM_SEND_MAX_BYTES', 50_000_000)),
+            'file.download' => new FileDownloadJobHandler($this->get(DownloadService::class), $this->get(Database::class), $this->get(TelegramClient::class), $this->get(Translator::class), $this->get(PublicUrl::class), Env::int('TELEGRAM_SEND_MAX_BYTES', 50_000_000)),
             'telegram.file_upload' => new TelegramFileUploadJobHandler($this->get(Database::class), $this->get(TelegramUploadService::class), $this->get(FileManagerService::class), $this->get(PlanGuard::class), $this->get(TelegramClient::class), $this->get(AuditLogger::class), $this->root . '/storage/temp'),
             'file.archive_create' => new ArchiveCreateJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class)),
             'file.archive_extract' => new ArchiveExtractJobHandler($this->get(ArchiveService::class), $this->get(FileManagerService::class), $this->get(AccountRepository::class), $this->get(UapiClient::class), $this->get(ArchiveSafetyValidator::class), $this->root . '/storage/temp', Env::int('MAX_ARCHIVE_INSPECTION_BYTES', 268_435_456), Env::int('MAX_ARCHIVE_EXPANDED_BYTES', 1_073_741_824), Env::int('MAX_ARCHIVE_FILES', 10_000), Env::int('MAX_ARCHIVE_EXPANSION_RATIO', 200), Env::int('MAX_ARCHIVE_TOP_LEVEL_ENTRIES', 500)),

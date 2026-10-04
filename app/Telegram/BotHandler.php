@@ -13,6 +13,7 @@ use App\Core\AppException;
 use App\Core\Database;
 use App\Core\Translator;
 use App\Help\HelpService;
+use App\Http\PublicUrl;
 use App\FileManager\DownloadService;
 use App\FileManager\FileManagerService;
 use App\FileManager\TelegramUploadService;
@@ -37,7 +38,7 @@ final class BotHandler
         private readonly CallbackStateService $callbacks,
         private readonly ConfirmationService $confirmations,
         private readonly RateLimiter $limits,
-        private readonly string $miniAppUrl,
+        private readonly PublicUrl $urls,
         private readonly FileManagerService $files,
         private readonly DownloadService $downloads,
         private readonly TelegramUploadService $uploads,
@@ -60,6 +61,32 @@ final class BotHandler
                 throw $exception;
             }
             $this->sendOperationError($update, $exception);
+        }
+    }
+
+    /**
+     * Best-effort reply used when an update failed unexpectedly, so the user
+     * is never left without an answer and Telegram is never asked to retry.
+     *
+     * @param array<string,mixed> $update
+     */
+    public function replyFailure(array $update): void
+    {
+        try {
+            $callback = is_array($update['callback_query'] ?? null) ? $update['callback_query'] : null;
+            if ($callback !== null && isset($callback['id'])) {
+                $this->telegram->call('answerCallbackQuery', ['callback_query_id' => (string) $callback['id'], 'text' => $this->translator->get('error.generic', 'fa'), 'show_alert' => false], 10);
+            }
+            $source = $callback ?? (is_array($update['message'] ?? null) ? $update['message'] : []);
+            $message = is_array($source['message'] ?? null) ? $source['message'] : $source;
+            $chatId = filter_var($message['chat']['id'] ?? null, FILTER_VALIDATE_INT);
+            if ($chatId === false) {
+                return;
+            }
+            $from = is_array($source['from'] ?? null) ? $source['from'] : [];
+            $language = str_starts_with(strtolower((string) ($from['language_code'] ?? '')), 'en') ? 'en' : 'fa';
+            $this->telegram->call('sendMessage', ['chat_id' => (int) $chatId, 'text' => '⚠️ ' . $this->translator->get('error.generic', $language) . "\n\n/start", 'disable_web_page_preview' => true], 10);
+        } catch (\Throwable) {
         }
     }
 
@@ -490,7 +517,7 @@ final class BotHandler
         $language = $this->language($user);
         $userId = (int) $user['id'];
         $keyboard = [
-            [['text' => $this->translator->get('menu.panel', $language), 'web_app' => ['url' => $this->miniAppUrl]]],
+            [['text' => $this->translator->get('menu.panel', $language), 'web_app' => ['url' => $this->urls->miniApp()]]],
             [
                 ['text' => $this->translator->get('menu.hosts', $language), 'callback_data' => $this->callbacks->create($userId, 'hosts.list')],
                 ['text' => $this->translator->get('menu.add_host', $language), 'callback_data' => $this->callbacks->create($userId, 'host.add')],
@@ -653,7 +680,7 @@ final class BotHandler
         if ($route === 'help' && $helpSlug !== null && $helpSlug !== '') {
             $query['slug'] = $helpSlug;
         }
-        return rtrim($this->miniAppUrl, '?&') . '?' . http_build_query($query, '', '&', PHP_QUERY_RFC3986);
+        return $this->urls->miniApp($query);
     }
 
     private function cancel(int $userId, string $language, int $chatId): void
@@ -725,6 +752,13 @@ final class BotHandler
     private function send(int $chatId, string $text, array $keyboard = []): void
     {
         $parameters = ['chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML', 'disable_web_page_preview' => true];
+        if (!$this->urls->isHttps()) {
+            // Telegram accepts Mini App buttons only for HTTPS addresses; keep the bot usable without them.
+            $keyboard = array_values(array_filter(array_map(
+                static fn (array $row): array => array_values(array_filter($row, static fn (array $button): bool => !isset($button['web_app']))),
+                $keyboard
+            ), static fn (array $row): bool => $row !== []));
+        }
         if ($keyboard !== []) {
             $parameters['reply_markup'] = ['inline_keyboard' => $keyboard];
         }
