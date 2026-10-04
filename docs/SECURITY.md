@@ -13,7 +13,7 @@ The super admin can manage service users/plans/operations but cannot retrieve ra
 | Cross-tenant ID access | Every resource lookup includes `user_id`; account-scoped operations resolve an owner-bound connection; foreign IDs return safe 404 | Ownership, Security Center, sessions, queue, backup and download tests; route/service review |
 | cPanel token disclosure | AES-256-GCM at rest, random nonce/tag, context AAD, key version; raw token omitted from listing/admin responses | Crypto and account-ownership tests; response contracts |
 | Temporary token persistence | Encrypted temporary row with expiry; cleanup; no raw token in archive/upload state | Account repository and cleanup contracts |
-| Telegram Mini App forgery | Telegram-defined HMAC validation, constant-time comparison, auth-date TTL, exact user JSON validation | `TelegramInitDataValidatorTest` |
+| Telegram Mini App forgery | Telegram-defined HMAC validation, constant-time comparison, auth-date freshness window (`TELEGRAM_INITDATA_TTL`, default 24 h, 5-minute clock-skew allowance), exact user JSON validation. A launch payload may re-authenticate within its window so Mini App reloads work; resulting sessions stay device-bound, CSRF-protected and revocable | `TelegramInitDataValidatorTest` |
 | Replay of Telegram auth | HMAC-derived nonce persisted once with expiry | `TelegramInitDataValidatorTest` and migration contract |
 | Session theft / CSRF | 256-bit opaque token, HMAC-hashed storage, expiry, user-agent binding, separate CSRF for mutations, rotation/logout/revoke | `MiniAppSessionTest`; API kernel contract |
 | Callback tampering | 22-character opaque ID; server-side encrypted payload; owner/action/expiry/one-use validation | `OneTimeStateTest` |
@@ -93,3 +93,11 @@ See [TESTED.md](TESTED.md) for test counts and [LIMITATIONS.md](LIMITATIONS.md) 
 ## Reporting a vulnerability
 
 Do not open a public issue containing a token, exploit payload, user data or hosting detail. Use the repository's private security advisory channel or contact the repository owner privately. Include the affected version, safe reproduction steps and request IDs with secrets removed.
+
+## Zero-configuration deployment controls (v1.1.0)
+
+- The front controller derives the install folder and routing mode from `SCRIPT_NAME`/`REQUEST_URI` per request; the `Host` header is validated and `X-Forwarded-Host` is never trusted. Encoded slashes, backslashes and control characters in paths are rejected.
+- `.htaccess` denies hidden files, private directories, `.env`, Markdown, SQL, shell and log files. When the server ignores `.htaccess` the installer warns the operator and recommends pointing the document root at `public/`; `.env` and storage remain `0600`/`0700`.
+- The Setup page requires the bot token, is rate-limited (8 attempts / 10 minutes per IP), checks `Origin`, and issues a 30-minute HMAC cookie (`HttpOnly`, `SameSite=Strict`, `Secure` on HTTPS). It never displays secrets other than the cron command the operator must install.
+- Webhook requests require the 256-bit path secret; a present `X-Telegram-Bot-Api-Secret-Token` header must also match. Failed updates are recorded and answered safely rather than retried indefinitely.
+- The web-cron endpoint requires the cron secret, is rate-limited and shares the CLI cron lock.

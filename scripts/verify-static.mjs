@@ -61,12 +61,19 @@ const hasRoute = candidate => routeRegexes.some(regex => regex.test(candidate.re
 const hostSuffixes = new Set([...appSource.matchAll(/hostPath\(\s*['"]([^'"]*)['"]/g)].map(match => `/api/v1/hosts/1${match[1]}`));
 for (const candidate of hostSuffixes) assert(hasRoute(candidate), `Mini App host API path has no backend route: ${candidate}`);
 
-const installer = read('public/install.php');
+const installer = read('app/Web/InstallerController.php');
 const installerFields = [...installer.matchAll(/<input\b[^>]*\bname="([^"]+)"/g)].map(match => match[1]).filter(name => name !== '_csrf').sort();
-assert(JSON.stringify(installerFields) === JSON.stringify(['bot_token', 'db_name', 'db_password', 'db_username', 'super_admin_id']), `Installer fields are not exactly the required five: ${installerFields.join(', ')}`);
-assert(!/<select\b|<textarea\b/i.test(installer.match(/<form[\s\S]*?<\/form>/i)?.[0] || ''), 'Installer asks for values outside its five input fields.');
-assert(!installer.includes('$error = $exception->getMessage()'), 'Installer exposes raw exception messages to unauthenticated visitors.');
+assert(JSON.stringify(installerFields) === JSON.stringify(['bot_token', 'db_host', 'db_name', 'db_password', 'db_username', 'super_admin_id', 'telegram_api_url', 'telegram_proxy', 'url_mode']), `Installer fields changed unexpectedly: ${installerFields.join(', ')}`);
+const requiredInstallerFields = [...installer.matchAll(/<input\b[^>]*\bname="([^"]+)"[^>]*\brequired\b/g)].map(match => match[1]).sort();
+assert(JSON.stringify(requiredInstallerFields) === JSON.stringify(['bot_token', 'db_name', 'db_password', 'db_username', 'super_admin_id']), `Installer must require exactly the five operator values: ${requiredInstallerFields.join(', ')}`);
+assert(!/<select\b|<textarea\b/i.test(installer), 'Installer asks for values outside its input fields.');
+assert(!installer.includes('getMessage()'), 'Installer exposes raw exception messages to unauthenticated visitors.');
 assert(installer.includes('InstallerException') && installer.includes("'message_fa'") && installer.includes("'message_en'"), 'Installer errors are not safe and bilingual.');
+assert(!/^\s*RewriteBase\b/mi.test(read('.htaccess')) && read('.htaccess').includes('RewriteRule ^index\\.php$ - [L]') && read('.htaccess').includes('RewriteRule ^ index.php [L,QSA]'), 'Root .htaccess is not folder-independent and loop-free.');
+assert(read('.htaccess').includes('HTTP_AUTHORIZATION'), 'Root .htaccess does not preserve the Authorization header for PHP-FPM/CGI.');
+assert(read('app/Http/UrlContext.php').includes('MODE_QUERY') && read('index.php').includes('FrontController'), 'Front controller does not auto-detect the installation folder and routing mode.');
+assert(read('app/Core/Database.php').includes("SET time_zone = '+00:00'"), 'Database sessions are not pinned to UTC.');
+assert(!read('app/Telegram/UpdateProcessor.php').includes('throw $exception'), 'A failing Telegram update is rethrown and would block webhook delivery.');
 const installerService = read('app/Installer/InstallerService.php');
 assert(installerService.includes('LOCK_EX | LOCK_NB') && installerService.includes('installer_busy'), 'Installer does not prevent concurrent execution.');
 
@@ -177,10 +184,11 @@ for (const key of ['deployStepPackage', 'deployStepDestination', 'deployStepVali
 assert(appSource.includes('deploymentWizardMarkup(') && appSource.includes('pollDeployment(') && appSource.includes('result.current_versions') && appSource.includes('result.rollback_points'), 'Mini App Deployment Center is missing its real eight-step state timeline or release overview.');
 assert(!appSource.includes("requireCapability(['files', 'backup'], 'deployCenter')"), 'Deployment Center is incorrectly disabled when the unrelated Full Backup capability is absent.');
 assert(!appSource.includes('escapeHtml(event.message_key)'), 'Mini App renders an untranslated deployment event key.');
-const miniAppIndex = read('public/miniapp/index.html');
-assert(miniAppIndex.includes('href="./styles.css"') && miniAppIndex.includes('src="./app.js"'), 'Mini App core assets must remain relative for subdirectory installations.');
-assert(miniAppIndex.includes('href="./deployment.css"'), 'Deployment Center responsive styling is not loaded from the Mini App directory.');
-
+const miniAppIndex = read('app/Web/MiniAppController.php');
+assert(miniAppIndex.includes("$asset('styles.css')") && miniAppIndex.includes("$asset('app.js')") && miniAppIndex.includes("$asset('telegram-bridge.js')"), 'Mini App shell does not load versioned core assets from the detected public path.');
+assert(miniAppIndex.includes("$asset('deployment.css')"), 'Deployment Center responsive styling is not loaded by the Mini App shell.');
+assert(!miniAppIndex.includes('telegram.org/js') && !read('public/miniapp/app.js').includes('telegram.org/js'), 'Mini App still depends on loading the Telegram SDK from telegram.org.');
+assert(read('public/miniapp/api.js').includes('X-Session-Token') && appSource.includes('appUrl(`/download/'), 'Mini App API or download URLs ignore the detected routing mode.');
 const backupService = read('app/Backup/BackupService.php');
 const backupTracker = read('app/Backup/BackupJobTracker.php');
 const sqlTransfers = read('app/Database/SqlTransferService.php');
@@ -197,7 +205,7 @@ for (const routeContract of ['/backups/file/{version}/restore', '/backups/file/{
 assert((deploymentRoutes.match(/feature\(\(int\) \$session\['user_id'\], 'backup_enabled'\)/g) || []).length >= 9, 'Backup feature policy is not enforced on every backup API operation.');
 for (const action of ['backup-refresh', 'backup-progress', 'backup-download', 'backup-restore', 'backup-delete']) assert(handlers.has(action), `Backup Center action is not connected: ${action}`);
 assert(appSource.includes('pollJob(Number(result.job_id), false)') && appSource.includes('pollDeployment(Number(result.job_id), Number(result.deployment_id), true)'), 'Backup Center does not track queued restore/backup and deployment rollback progress.');
-assert(miniAppIndex.includes('href="./backup.css"'), 'Backup Center responsive styling is not loaded from the Mini App directory.');
+assert(miniAppIndex.includes("$asset('backup.css')"), 'Backup Center responsive styling is not loaded by the Mini App shell.');
 
 const securityCenter = read('app/Security/SecurityCenterService.php');
 for (const key of ['connected_hosts', 'failed_tokens', 'suspicious_requests', 'recent_destructive_actions', 'active_sessions', 'security_alerts']) {

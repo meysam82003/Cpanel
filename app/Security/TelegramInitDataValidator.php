@@ -12,7 +12,7 @@ final class TelegramInitDataValidator
     public function __construct(
         private readonly Database $database,
         private readonly string $botToken,
-        private readonly int $ttlSeconds = 900,
+        private readonly int $ttlSeconds = 86400,
     ) {
     }
 
@@ -44,7 +44,7 @@ final class TelegramInitDataValidator
         }
 
         $authDate = filter_var($data['auth_date'] ?? null, FILTER_VALIDATE_INT);
-        if ($authDate === false || $authDate > time() + 30 || $authDate < time() - $this->ttlSeconds) {
+        if ($authDate === false || $authDate > time() + 300 || $authDate < time() - $this->ttlSeconds) {
             throw new AppException('Telegram authentication data has expired.', 401, 'expired_init_data', [], 'security.miniapp-auth');
         }
         $user = json_decode((string) ($data['user'] ?? ''), true);
@@ -52,6 +52,9 @@ final class TelegramInitDataValidator
             throw new AppException('Telegram user identity is invalid.', 401, 'invalid_init_data');
         }
 
+        // A Mini App keeps the same signed launch data for its whole lifetime, so
+        // a reload must be able to authenticate again within the freshness
+        // window. The first use is recorded for auditing; reuse is allowed.
         $replayHash = hash('sha256', $hash . '|' . ($data['query_id'] ?? '') . '|' . $authDate);
         try {
             $this->database->execute(
@@ -59,10 +62,9 @@ final class TelegramInitDataValidator
                 [$replayHash, gmdate('Y-m-d H:i:s', time() + $this->ttlSeconds)]
             );
         } catch (\PDOException $exception) {
-            if ((string) $exception->getCode() === '23000') {
-                throw new AppException('This Telegram authentication payload has already been used.', 401, 'init_data_replay');
+            if ((string) $exception->getCode() !== '23000') {
+                throw $exception;
             }
-            throw $exception;
         }
 
         return ['user' => $user, 'auth_date' => (int) $authDate, 'query_id' => isset($data['query_id']) ? (string) $data['query_id'] : null];

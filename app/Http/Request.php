@@ -25,12 +25,13 @@ final class Request
     ) {
     }
 
-    public static function capture(?string $appUrl = null): self
+    /** Captures the current request; $path is the routed path resolved by UrlContext. */
+    public static function capture(string $path): self
     {
         $raw = file_get_contents('php://input') ?: '';
-        $contentType = strtolower($_SERVER['CONTENT_TYPE'] ?? '');
+        $contentType = strtolower((string) ($_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? ''));
         $body = $_POST;
-        if (str_contains($contentType, 'application/json') && $raw !== '') {
+        if ($raw !== '' && (str_contains($contentType, 'application/json') || ($body === [] && ($raw[0] ?? '') === '{'))) {
             if (strlen($raw) > 1_048_576) {
                 throw new AppException('JSON request body exceeds the 1 MiB limit.', 413, 'request_body_too_large');
             }
@@ -47,7 +48,7 @@ final class Request
 
         $headers = [];
         foreach ($_SERVER as $key => $value) {
-            if (str_starts_with($key, 'HTTP_')) {
+            if (is_string($key) && str_starts_with($key, 'HTTP_')) {
                 $name = strtolower(str_replace('_', '-', substr($key, 5)));
                 $headers[$name] = (string) $value;
             }
@@ -55,37 +56,26 @@ final class Request
         if (isset($_SERVER['CONTENT_TYPE'])) {
             $headers['content-type'] = (string) $_SERVER['CONTENT_TYPE'];
         }
-        if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-            $headers['authorization'] = (string) $_SERVER['HTTP_AUTHORIZATION'];
+        // PHP-FPM/CGI behind Apache drop Authorization unless it is re-exported.
+        foreach (['HTTP_AUTHORIZATION', 'REDIRECT_HTTP_AUTHORIZATION', 'REDIRECT_REDIRECT_HTTP_AUTHORIZATION'] as $key) {
+            if (!isset($headers['authorization']) && is_string($_SERVER[$key] ?? null) && $_SERVER[$key] !== '') {
+                $headers['authorization'] = (string) $_SERVER[$key];
+            }
         }
-
-        $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-        if (strlen($uri) > 2048 || preg_match('/%(?:00|2f|5c)/i', $uri)) {
-            throw new AppException('Request path is invalid.', 400, 'invalid_request_path');
-        }
-        $decodedPath = '/' . ltrim(rawurldecode($uri), '/');
-        if (preg_match('/[\x00-\x1F\x7F]/', $decodedPath)) {
-            throw new AppException('Request path is invalid.', 400, 'invalid_request_path');
-        }
-
-        if ($appUrl !== null && $appUrl !== '') {
-            $basePath = parse_url($appUrl, PHP_URL_PATH);
-            if (is_string($basePath) && $basePath !== '') {
-                $basePath = '/' . trim($basePath, '/');
-                if ($basePath === '/') {
-                    $basePath = '';
-                }
-                if ($basePath !== '' && ($decodedPath === $basePath || str_starts_with($decodedPath, $basePath . '/'))) {
-                    $decodedPath = substr($decodedPath, strlen($basePath));
-                    $decodedPath = '/' . ltrim($decodedPath, '/');
+        if (!isset($headers['authorization']) && function_exists('getallheaders')) {
+            foreach ((array) getallheaders() as $name => $value) {
+                if (is_string($name) && strtolower($name) === 'authorization' && is_string($value)) {
+                    $headers['authorization'] = $value;
                 }
             }
         }
+        $query = $_GET;
+        unset($query['r']);
 
         return new self(
-            strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET'),
-            $decodedPath,
-            $_GET,
+            strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')),
+            $path,
+            $query,
             $body,
             $headers,
             $_FILES,

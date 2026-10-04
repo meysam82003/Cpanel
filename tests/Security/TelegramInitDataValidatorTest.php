@@ -15,19 +15,17 @@ final class TelegramInitDataValidatorTest extends TestCase
 
     private const BOT_TOKEN = '123456:' . 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
-    public function testValidatesTelegramSignatureFreshnessIdentityAndReplay(): void
+    public function testValidatesTelegramSignatureFreshnessIdentityAndAllowsMiniAppReload(): void
     {
         $database = $this->sqlite('CREATE TABLE replay_nonces (nonce_hash TEXT PRIMARY KEY, user_id INTEGER, expires_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP);');
         $validator = new TelegramInitDataValidator($database, self::BOT_TOKEN, 900);
         $payload = $this->signedPayload(['id' => 99887766, 'first_name' => 'Test'], time());
         $result = $validator->validate($payload);
         self::assertSame(99887766, $result['user']['id']);
-        try {
-            $validator->validate($payload);
-            self::fail('initData replay was accepted.');
-        } catch (AppException $exception) {
-            self::assertSame('init_data_replay', $exception->safeCode);
-        }
+        // Reloading the Mini App re-sends the same signed launch data.
+        self::assertSame(99887766, $validator->validate($payload)['user']['id']);
+        self::assertSame(1, (int) $database->one('SELECT COUNT(*) AS total FROM replay_nonces')['total']);
+        $this->assertCode('invalid_init_data', fn () => $validator->validate(str_replace('Test', 'Evil', $payload)));
     }
 
     public function testRejectsTamperedExpiredAndNonPositiveIdentity(): void

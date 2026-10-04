@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Admin;
 
+use App\Http\PublicUrl;
 use App\Audit\AuditLogger;
 use App\Core\AppException;
 use App\Core\Database;
@@ -291,13 +292,17 @@ final class AdminService
         $databaseStarted = microtime(true);
         $this->database->one('SELECT 1 AS ok');
         $databaseLatency = (int) round((microtime(true) - $databaseStarted) * 1000);
-        $telegram = ['reachable' => false, 'url_matches' => false, 'pending_updates' => null, 'last_error_at' => null];
+        $transportRow = $this->database->one("SELECT setting_value FROM settings WHERE setting_key = 'telegram_transport'");
+        $transport = $transportRow === null ? null : json_decode((string) $transportRow['setting_value'], true);
+        $telegram = ['reachable' => false, 'url_matches' => false, 'pending_updates' => null, 'last_error_at' => null, 'transport' => is_array($transport) ? (string) ($transport['mode'] ?? 'webhook') : 'webhook'];
         try {
             $webhook = $this->telegram->call('getWebhookInfo');
             if (is_array($webhook)) {
                 $telegram = [
+                    'transport' => $telegram['transport'],
                     'reachable' => true,
-                    'url_matches' => hash_equals(rtrim((string) Config::app('url'), '/') . '/webhook/' . Env::require('WEBHOOK_SECRET'), (string) ($webhook['url'] ?? '')),
+                    'url_matches' => hash_equals(PublicUrl::fromEnv()->webhook(Env::require('WEBHOOK_SECRET')), (string) ($webhook['url'] ?? '')),
+                    'last_error_message' => isset($webhook['last_error_message']) ? mb_substr((string) $webhook['last_error_message'], 0, 300) : null,
                     'pending_updates' => isset($webhook['pending_update_count']) ? (int) $webhook['pending_update_count'] : null,
                     'last_error_at' => isset($webhook['last_error_date']) ? gmdate('c', (int) $webhook['last_error_date']) : null,
                 ];

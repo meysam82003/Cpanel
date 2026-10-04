@@ -58,9 +58,9 @@ Run on a new domain and disposable Telegram bot before production:
 
 1. Download the CI/release ZIP and its `.sha256` file.
 2. Run `sha256sum -c telegram-cpanel-manager-<version>.zip.sha256`.
-3. Extract and confirm `.htaccess`, `VERSION`, `composer.json`, `public/install.php`, all migrations and `CHECKSUMS.sha256` exist.
+3. Extract into any folder and confirm `.htaccess`, `index.php`, `VERSION`, `composer.json`, `public/index.php`, all migrations and `CHECKSUMS.sha256` exist.
 4. Ensure direct HTTP requests to `/.env`, `/app/`, `/database/`, `/storage/`, `/tests/` and `/cli/` are denied.
-5. Open `/install` over HTTPS and confirm exactly five fields.
+5. Open the folder address over HTTPS and confirm exactly five required fields (advanced fields are optional).
 6. First submit an invalid Bot Token and verify a bilingual safe error with no token echo.
 7. Submit valid values and verify all displayed stages succeed.
 8. Confirm `.env` mode is restrictive where the filesystem supports POSIX mode and it is denied over HTTP.

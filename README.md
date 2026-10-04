@@ -29,28 +29,39 @@ No cPanel account password is requested. Users connect with a cPanel API token, 
 
 The release ZIP contains the runtime code and does not require Composer on the hosting account. `composer.json` remains the canonical dependency and PSR-4 configuration for development and CI.
 
-## Install on shared cPanel hosting
+## Install on shared cPanel hosting (no path configuration)
 
-1. In cPanel, create a database and database user, assign the user to the database, and grant all privileges on that application database.
-2. Point an HTTPS domain or subdomain to an empty directory. Extract the release ZIP into that directory. Keep `.htaccess` intact.
-3. Make the project directory writable by its PHP process for installation. Normal files should be `0644`, directories `0755`; runtime storage is changed to restrictive permissions by the installer.
-4. Open `https://your-domain.example/install`.
-5. Enter exactly these five values:
+Nothing has to be configured about where the files live. The application works at a domain root, in any sub-folder (`https://example.com/bot`, `https://example.com/a/b/c`), on Apache/LiteSpeed with or without `mod_rewrite`, and with the document root pointed at `public/`. Everything is detected at runtime.
+
+1. In cPanel → **MySQL Databases**, create a database and a user and add the user to the database with **ALL PRIVILEGES**.
+2. Extract the release ZIP into **any folder** (keep `.htaccess`).
+3. Open that address in a browser, e.g. `https://example.com/bot/` (or `https://example.com/bot/index.php`). The installer appears right there.
+4. Enter only these five values:
 
    | # | Installer field |
    |---|---|
    | 1 | Telegram Bot Token |
-   | 2 | Super Admin Telegram Numeric ID |
-   | 3 | Database Username |
-   | 4 | Database Password |
-   | 5 | Database Name |
+   | 2 | Super-admin numeric Telegram ID — message your bot and press **Detect** |
+   | 3 | Database name (the `cpuser_` prefix is tried automatically) |
+   | 4 | Database username |
+   | 5 | Database password |
 
-6. Let the installer finish every displayed verification step. It automatically uses `localhost:3306`, detects the public HTTPS URL, generates all security keys, creates `.env`, runs all migrations and seeds, registers the super admin, configures Telegram, and writes `storage/installed.lock`.
-7. Copy the exact Cron command shown on the success screen into **cPanel → Cron Jobs**, scheduled once per minute.
-8. Open `/telegram-setup` and follow the bilingual BotFather checklist. The installer already registers the webhook, commands, and menu button; the page also provides the detected Mini App URL for BotFather interfaces that require manual Main Mini App configuration.
-9. Open the bot, send `/start`, select a language, and complete or intentionally skip the onboarding wizard.
+   *Advanced (optional)*: database server (default `localhost`, then `127.0.0.1`), a Telegram proxy (e.g. `socks5h://IP:PORT` for hosts that cannot reach `api.telegram.org`) and a Bot API relay URL.
+5. Press Install. The installer detects the public URL and folder, probes which routing works (clean URLs, `index.php/…` or `index.php?r=…`), generates keys, writes `.env`, migrates and seeds, registers the super admin, configures the webhook, localized commands and the Mini App menu button, and sends you a welcome message.
+6. Add the displayed cron command in **cPanel → Cron Jobs** every minute (`* * * * *`). The correct CLI PHP binary (for example `/opt/cpanel/ea-php82/root/usr/bin/php`) is detected. A **web-cron** URL/command is also shown for hosts without CLI cron.
+7. Open the bot and send `/start`.
 
-The installer has no remote unlock control. Reinstallation requires the hosting owner to remove `storage/installed.lock` manually. Do not remove it from an active installation.
+### When webhooks cannot work
+
+- If Telegram rejects the webhook (port, certificate, no HTTPS), the bot is switched to **polling** automatically and the one-minute cron receives and answers updates.
+- Every five minutes cron verifies the webhook, re-registers it if it changed, and fails over to polling when Telegram cannot deliver for 15 minutes, answering the backlog.
+- A failing update is recorded and answered safely instead of being retried by Telegram forever, so one bad update can no longer block the bot.
+
+### Moving the folder or domain — Setup page
+
+After installation `/setup` (or `index.php?r=/setup`) shows version, configured vs. current address, cron heartbeat, transport and Telegram's last error. Sign in with the bot token to **Repair** (store the current address and re-register webhook, commands and Mini App) or switch between webhook and polling. After moving the application, open Setup at the new address and press Repair.
+
+The installer has no remote unlock. Reinstallation requires removing `storage/installed.lock` manually; existing encryption keys are preserved when the installer runs again.
 
 ## What the installer creates
 
@@ -182,7 +193,7 @@ From a clean Git checkout:
 
 ```bash
 scripts/build-release.sh
-(cd dist && sha256sum -c telegram-cpanel-manager-1.0.0.zip.sha256)
+(cd dist && sha256sum -c telegram-cpanel-manager-1.1.0.zip.sha256)
 ```
 
 The builder archives only committed source, removes CI/dev-only files, creates protected runtime directories, adds a per-file checksum manifest, normalizes timestamps, scans for token/private-key patterns, rejects `.env` and install locks, tests the ZIP, and writes an external SHA-256 file. CI performs the same build after all PHP and MariaDB jobs pass and publishes it as a workflow artifact.
