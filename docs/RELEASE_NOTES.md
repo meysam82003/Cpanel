@@ -1,3 +1,17 @@
+# Telegram cPanel Manager v1.1.1
+
+## فارسی
+
+- فایل‌های ورودی مستقیم `install.php` و `setup.php` اضافه شدند؛ نصب‌کننده و صفحهٔ Setup حتی وقتی Rewrite در دسترس نیست، `.htaccess` Extract نشده یا قوانین پوشهٔ والد درخواست را منحرف می‌کنند، بدون هیچ Redirect باز می‌شوند (`https://example.com/folder/install.php`).
+- اگر فایل مخفی `.htaccess` هنگام آپلود/Extract جا افتاده باشد، نصب‌کننده هشدار امنیتی دقیق نشان می‌دهد.
+
+## English
+
+- Added direct `install.php` and `setup.php` entry files so the installer and Setup open without any redirect even when rewriting is unavailable, `.htaccess` was not extracted, or parent-folder rules intercept requests.
+- The installer warns when the hidden `.htaccess` file is missing after upload/extraction.
+
+---
+
 # Telegram cPanel Manager v1.1.0
 
 ## فارسی

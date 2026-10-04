@@ -63,6 +63,7 @@ final class FrontController
                     (new InstallerController($this->root, $context))->locked();
                     // no break
                 case '/setup':
+                case '/setup.php':
                 case '/telegram-setup':
                 case '/telegram-setup.php':
                 case '/public/telegram-setup.php':

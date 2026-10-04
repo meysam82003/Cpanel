@@ -84,7 +84,7 @@ unzip -q "$archive" -d "$verification"
 )
 archive_entries="$(unzip -Z1 "$archive" | sed 's#^\./##')"
 
-for required in .htaccess index.php VERSION composer.json README.md README.fa.md docs/IMPLEMENTED.md docs/TESTED.md docs/SECURITY.md docs/INSTALLATION_TEST.md docs/LIMITATIONS.md docs/ACCEPTANCE.md public/index.php public/.htaccess public/miniapp/app.js public/miniapp/telegram-bridge.js cli/cron.php cli/worker.php cli/update.php database/migrations/001_initial.sql CHECKSUMS.sha256 BUILD-MANIFEST.json; do
+for required in .htaccess index.php install.php setup.php VERSION composer.json README.md README.fa.md docs/IMPLEMENTED.md docs/TESTED.md docs/SECURITY.md docs/INSTALLATION_TEST.md docs/LIMITATIONS.md docs/ACCEPTANCE.md public/index.php public/.htaccess public/miniapp/app.js public/miniapp/telegram-bridge.js cli/cron.php cli/worker.php cli/update.php database/migrations/001_initial.sql CHECKSUMS.sha256 BUILD-MANIFEST.json; do
   if ! grep -Fxq "$required" <<< "$archive_entries"; then
     echo "Release archive is missing $required." >&2
     exit 1

@@ -72,6 +72,7 @@ assert(installer.includes('InstallerException') && installer.includes("'message_
 assert(!/^\s*RewriteBase\b/mi.test(read('.htaccess')) && read('.htaccess').includes('RewriteRule ^index\\.php$ - [L]') && read('.htaccess').includes('RewriteRule ^ index.php [L,QSA]'), 'Root .htaccess is not folder-independent and loop-free.');
 assert(read('.htaccess').includes('HTTP_AUTHORIZATION'), 'Root .htaccess does not preserve the Authorization header for PHP-FPM/CGI.');
 assert(read('app/Http/UrlContext.php').includes('MODE_QUERY') && read('index.php').includes('FrontController'), 'Front controller does not auto-detect the installation folder and routing mode.');
+assert(read('install.php').includes("$_GET['r'] = '/install'") && read('setup.php').includes("$_GET['r'] = '/setup'"), 'Direct installer/setup entries without URL rewriting are missing.');
 assert(read('app/Core/Database.php').includes("SET time_zone = '+00:00'"), 'Database sessions are not pinned to UTC.');
 assert(!read('app/Telegram/UpdateProcessor.php').includes('throw $exception'), 'A failing Telegram update is rethrown and would block webhook delivery.');
 const installerService = read('app/Installer/InstallerService.php');
