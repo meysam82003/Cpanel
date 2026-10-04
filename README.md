@@ -35,7 +35,7 @@ Nothing has to be configured about where the files live. The application works a
 
 1. In cPanel → **MySQL Databases**, create a database and a user and add the user to the database with **ALL PRIVILEGES**.
 2. Extract the release ZIP into **any folder** (keep `.htaccess`).
-3. Open that address in a browser, e.g. `https://example.com/bot/` (or `https://example.com/bot/index.php`). The installer appears right there.
+3. Open that address in a browser, e.g. `https://example.com/bot/`. If it does not open or reports a redirect error, open `https://example.com/bot/install.php` directly (no rewriting needed).
 4. Enter only these five values:
 
    | # | Installer field |
@@ -193,7 +193,7 @@ From a clean Git checkout:
 
 ```bash
 scripts/build-release.sh
-(cd dist && sha256sum -c telegram-cpanel-manager-1.1.0.zip.sha256)
+(cd dist && sha256sum -c telegram-cpanel-manager-1.1.1.zip.sha256)
 ```
 
 The builder archives only committed source, removes CI/dev-only files, creates protected runtime directories, adds a per-file checksum manifest, normalizes timestamps, scans for token/private-key patterns, rejects `.env` and install locks, tests the ZIP, and writes an external SHA-256 file. CI performs the same build after all PHP and MariaDB jobs pass and publishes it as a workflow artifact.

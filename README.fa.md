@@ -35,7 +35,7 @@ ZIP انتشار شامل کد Runtime است و برای اجرای عادی ر
 
 1. در cPanel → **MySQL Databases** یک دیتابیس و یک کاربر بسازید و کاربر را با **ALL PRIVILEGES** به دیتابیس اضافه کنید.
 2. ZIP انتشار را در **هر پوشه‌ای** که می‌خواهید Extract کنید (فایل `.htaccess` را نگه دارید).
-3. همان آدرس را در مرورگر باز کنید؛ مثلاً `https://example.com/bot/` (یا اگر سرور اجازه نداد، `https://example.com/bot/index.php`). نصب‌کننده همان‌جا باز می‌شود.
+3. همان آدرس را در مرورگر باز کنید؛ مثلاً `https://example.com/bot/`. اگر صفحه باز نشد یا خطای Redirect داد، مستقیم `https://example.com/bot/install.php` را باز کنید (بدون نیاز به Rewrite).
 4. فقط این پنج مقدار را وارد کنید:
 
    | شماره | ورودی |
@@ -195,7 +195,7 @@ Deployment ساختار و checksum ZIP را بررسی، Backup اجباری ر
 
 ```bash
 scripts/build-release.sh
-(cd dist && sha256sum -c telegram-cpanel-manager-1.1.0.zip.sha256)
+(cd dist && sha256sum -c telegram-cpanel-manager-1.1.1.zip.sha256)
 ```
 
 Builder فقط Source commit‌شده را Archive می‌کند، فایل‌های CI/dev را کنار می‌گذارد، Runtime directory محافظت‌شده می‌سازد، Manifest checksum هر فایل را اضافه می‌کند، Timestampها را نرمال، Token/Private Key را Scan، وجود `.env` و Install lock را رد، خود ZIP را Test و SHA-256 بیرونی تولید می‌کند. CI همین بسته را فقط پس از موفقیت PHP و MariaDB ساخته و به‌صورت Workflow Artifact منتشر می‌کند.

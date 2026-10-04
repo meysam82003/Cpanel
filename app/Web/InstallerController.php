@@ -96,6 +96,9 @@ final class InstallerController
         }
         $html .= '</div></details></section>';
 
+        if (!is_file($this->root . '/.htaccess')) {
+            $html .= '<div class="notice bad"><b>فایل مخفی .htaccess در پوشه برنامه نیست</b><br>هنگام Extract یا آپلود، فایل‌های مخفی (که با نقطه شروع می‌شوند) جا افتاده‌اند. ZIP را در cPanel → File Manager آپلود و همان‌جا Extract کنید، یا در File Manager از Settings گزینه Show Hidden Files را روشن و .htaccess را بررسی کنید. بدون آن، فایل .env از وب قابل دسترسی می‌شود.<div class="ltr">The hidden .htaccess file is missing (dotfiles were skipped while extracting/uploading). Upload the ZIP in cPanel File Manager and extract it there; without it .env may be web-readable.</div></div>';
+        }
         if ($error !== null) {
             $html .= '<div class="notice bad"><b>نصب کامل نشد · Installation failed</b><br>' . View::e($error['message_fa']) . '<div class="ltr">' . View::e($error['message_en']) . '</div><small class="ltr muted">Code: ' . View::e($error['code']) . ' · Ref: ' . View::e($error['request_id']) . '</small></div>';
         }
