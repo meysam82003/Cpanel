@@ -1,0 +1,50 @@
+# Telegram cPanel Manager
+# Works unchanged at a domain root or in any sub-folder: no RewriteBase,
+# path or URL needs to be edited. Without mod_rewrite the application still
+# works through index.php?r=... addresses (detected by the installer).
+
+Options -Indexes -MultiViews
+ServerSignature Off
+DirectoryIndex index.php
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+</IfModule>
+
+# PHP-FPM / CGI / LiteSpeed: keep the Authorization header visible to PHP.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{HTTP:Authorization} .+
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%0]
+
+    # Already routed to the front controller: stop (prevents rewrite loops).
+    RewriteRule ^index\.php$ - [L]
+
+    # Never expose hidden files or private directories.
+    RewriteRule (^|/)\.(?!well-known/) - [F,L]
+    RewriteRule ^(?:app|bootstrap|cli|config|database|docs|resources|routes|scripts|storage|tests|vendor)(?:/|$) - [F,L,NC]
+
+    # Real Mini App assets are served directly by the web server.
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^public/(?:miniapp|assets)/ - [L]
+
+    # Everything else goes to the front controller (relative: works in any folder).
+    RewriteRule ^ index.php [L,QSA]
+</IfModule>
+
+<FilesMatch "(?i)^(?:\.env.*|\.git.*|composer\.(?:json|lock)|phpunit\.xml.*|.*\.md|.*\.sql|.*\.sh|.*\.log|VERSION|CHECKSUMS\.sha256|BUILD-MANIFEST\.json)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

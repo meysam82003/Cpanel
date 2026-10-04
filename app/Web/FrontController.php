@@ -14,6 +14,7 @@ use App\Http\Request;
 use App\Http\Response;
 use App\Http\UrlContext;
 use App\Installer\InstallerService;
+use App\Support\HtaccessGuard;
 
 /**
  * Single entry point for every web request (index.php at the project root,
@@ -28,6 +29,7 @@ final class FrontController
     public function run(): never
     {
         date_default_timezone_set('UTC');
+        HtaccessGuard::ensure($this->root);
         $method = strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET'));
         try {
             $context = UrlContext::fromGlobals($_SERVER, $_GET, $this->root, $this->publicEntry);

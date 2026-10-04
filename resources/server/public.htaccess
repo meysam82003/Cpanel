@@ -1,0 +1,21 @@
+# Used when public/ is the document root, and for direct requests to public/.
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    RewriteCond %{HTTP:Authorization} .+
+    RewriteRule ^ - [E=HTTP_AUTHORIZATION:%0]
+
+    RewriteRule ^index\.php$ - [L]
+
+    RewriteCond %{REQUEST_FILENAME} -f
+    RewriteRule ^(?:miniapp|assets)/ - [L]
+
+    RewriteRule ^ index.php [L,QSA]
+</IfModule>
